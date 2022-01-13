@@ -1,0 +1,573 @@
+---
+title: "Indicators of Habitat and Ecosystem Change"
+author: "Matt Dzaugis"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    toc: TRUE
+    toc_float:
+        collapsed: FALSE
+    code_folding: hide
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+library(tidyverse)
+library(patchwork)
+library(factoextra)
+library(gmRi)
+# Set theme  
+theme_set(theme_bw())
+```
+
+
+`r use_gmri_style_rmd(css_file = "gmri_rmarkdown.css")`
+
+## Developing Indicators of Habitat and Ecosystem Change in the Gulf of Maine
+
+### Study area
+
+The focus area for this project is coastal Maine, extending from the coast to the eastern boundary of the NOAA statistical areas 511, 512, 513. 
+
+```{r study area, fig.width=4, fig.cap="Study region. NOAA statistical areas are indicated as colored polygons. Maine coastal current study region indicated by the black outlined open polygon"}
+
+usStates <- rnaturalearth::ne_states("united states of america", returnclass = "sf")
+ne_us <- usStates %>% filter(name == "Maine")
+statarea <- sf::st_read(paste0(gmRi::shared.path(group = "Res_Data", folder = "Shapefiles/Statistical_Areas"), "Statistical_Areas_2010_withnames.shp"), quiet = TRUE) %>% 
+  filter(Id %in% c(511, 512, 513)) %>% 
+  mutate(Id = as.factor(Id))
+statarea_sf <- sf::st_simplify(statarea, dTolerance = .05)
+mcc_turnoff_sf <- sf::st_read(here::here("Data/Shapefiles/MCC_turnoff/MCC_turnoff.shp"), quiet = TRUE)
+
+ggplot() +  
+  geom_sf(data = statarea_sf, aes(fill = Id)) + 
+  geom_sf(data= ne_us, fill = "grey") +
+  geom_sf(data = mcc_turnoff_sf, fill = "transparent", color = "black") +
+  scale_fill_discrete(name = "Stat area") +
+  theme(panel.background = element_blank(), 
+        panel.grid = element_blank(), 
+        axis.title = element_blank(),
+        axis.ticks = element_blank())
+```
+
+
+
+### Indicators {.tabset}
+
+The following indicators are used in this report
+
+* Surface and bottom temperature anomalies (FVCOM, OISST)
+* Surface and bottom salinity anomalies (FVCOM)
+* Maine Coastal Current Index (FVCOM)
+* Species-based lobster predator index (NOAA Trawl Survey)
+* Continuous Plankton Recordings
+
+
+```{r read_data}
+# Indicators
+allIndicators <- read_csv(here::here("Processed_Indicators/allIndicators.csv"))
+allIndicators$Season <- factor(allIndicators$Season, levels= c("spring", "summer", "fall", "winter", "all"))
+allIndicators$stat_area <- factor(allIndicators$stat_area, levels= c("511", "512", "513", "511-513"))
+indicators <- unique(allIndicators$Indicator)
+```
+
+
+### Indicators PCA{.tabset}
+
+Previous analysis shows surface and bottom temperature and surface and bottom salinity load similarly in a PCA. To reduce variables only bottom temperature and salinity are used in the following PCA.
+
+* Data: Bottom temp, bottom salinity, MCC, Predator Index, CPR data mode one and two
+* Method: Principal components analysis 
+* Years: 1990-2016
+
+#### PCA Summary
+
+The first three principal components have eigenvalues greater than one and were retained for further analysis. PC1 and PC2 explain 34.5% and 24.8% of the variability, respectively. PC3 explains an additional 14.4% of the variability.
+
+```{r PCA_summary}
+indicator_list <- c("fvcom_bt", "fvcom_bs","mcc", "nefsc_abundance", "nefsc_size_spectra_slope", "cpr_FirstMode", "cpr_SecondMode")
+
+allIndex <- allIndicators %>% 
+  filter(Season == "all", 
+         stat_area == "511-513",
+         Indicator %in% indicator_list) %>% 
+  select(-Season, -stat_area) %>% 
+  pivot_wider(names_from = Indicator, values_from = Value) %>% 
+  na.omit()
+
+### Composite PCA (combined stat areas)
+indicator_pca <- allIndex %>% column_to_rownames(., var = "Year") %>% 
+  prcomp(scale. = TRUE, center = TRUE)
+
+index_pca <- tibble("PC1" = indicator_pca$x[,1],
+                    "PC2" = indicator_pca$x[,2],
+                    "PC3" = indicator_pca$x[,3])
+index_pca["Year"] <- allIndex$Year
+
+pc_importance <- summary(indicator_pca)$importance[, 1:5]
+
+knitr::kable(pc_importance)
+
+```
+
+
+```{r screeplots}
+scree1 <- fviz_eig(indicator_pca, ylab = "% variance explained") + scale_y_continuous(limits = c(0,60))
+
+#scree1 / scree2 / scree3
+
+```
+
+
+
+#### PC time series
+
+
+Below are the time series for PC1, PC2, and PC3. PC1 and PC2 time series are highly correlated between stat areas. 
+
+```{r pcaTimeSeries}
+
+PC1plot <- index_pca %>% 
+  ggplot() + 
+  geom_line(aes(Year, PC1))
+
+PC2plot <- index_pca %>% 
+  ggplot() + 
+  geom_line(aes(Year, PC2))
+
+PC3plot <- index_pca %>% 
+  ggplot() + 
+  geom_line(aes(Year, PC3))
+
+
+PC1plot / PC2plot / PC3plot
+
+### Maine composite
+
+PC1plot <- index_pca %>% 
+  ggplot() + 
+  geom_line(aes(Year, PC1))
+
+PC2plot <- index_pca %>% 
+  ggplot() + 
+  geom_line(aes(Year, PC2))
+
+PC3plot <- index_pca %>% 
+  ggplot() + 
+  geom_line(aes(Year, PC3))
+
+PC1plot / PC2plot / PC3plot
+```
+
+
+#### Loadings plot
+
+Indicators load similarly for each stat area. The Maine coastal current, first mode (small zooplankton), and second mode (Calanus) tend to load together. The lobster predator index has the most variable relationship to PC1 and PC2 with respect to stat area. In stat area 512 and 513, predators loads with bottom temperature. In area 511, predators load separated from the rest of the indicators and has a stronger influence on PC2 than PC1. Bottom salinity and the plankton FirstMode (Calanus) tend to load similarly for each stat area. 
+
+Interpretation:
+
+* PC1: Bottom salinity and Maine Coastal Current load directly opposite and are the largest contributors to PC1
+* PC1: Contribution of bottom temperature increases from stat area 511 to 513
+* PC2: Small zooplankton and Calanus group together and load opposite to bottom temperature and predators
+
+
+```{r loadings, echo=FALSE, message=FALSE, warning=FALSE, fig.cap="Figure 4. Loadings of the variables"}
+
+PC1loadings <- data.frame(indicator_pca$rotation) %>% 
+  rownames_to_column("Indicator")
+
+biplots <- fviz_pca_biplot(indicator_pca, label = "var", labelsize = 4)
+
+loadingsTable <- PC1loadings %>% 
+  select(Indicator, PC1, PC2, PC3) %>% 
+  mutate(PC1 = round(PC1, 3),
+         PC2 = round(PC2, 3),
+         PC3 = round(PC3, 3)) %>% 
+  knitr::kable()
+
+loadings_barplot <- PC1loadings %>% 
+  select(Indicator, PC1, PC2) %>%
+  pivot_longer(cols = c(PC1, PC2), names_to = "Mode", values_to = "values") %>% 
+  ggplot() +
+  geom_col(aes(x = Indicator, y = values, fill = Mode), position = position_dodge(width = .5)) + 
+  theme(axis.text.x = element_text(angle = 45))
+
+biplots
+
+loadingsTable
+
+loadings_barplot
+
+```
+
+
+#### Chronolgical cluster
+
+The cluster plot groups years that are most similar based on PC1 and PC2. For this analysis stat areas were grouped together. 
+
+```{r indicators_cluster}
+clusfun <- function(x){
+  wss <- (nrow(x)-1)*sum(apply(x,2,var)) # get sum of squares
+
+  for (i in 2:12) wss[i] <- sum(kmeans(x,
+     centers=i)$withinss)
+  
+  return(wss)
+}
+
+allIndex_ca <- allIndex %>% 
+  column_to_rownames(., var = "Year") %>% scale() %>% clusfun()
+
+# look for break in plot like a scree plot
+
+kmeans_scree <- ggplot() + 
+  geom_line(aes(x = c(1:12), y = allIndex_composite)) +
+  labs(x = "Number of Clusters",
+  y ="Within groups sum of squares")
+
+# K-Means Cluster Analysis
+fit <- allIndex %>% 
+  column_to_rownames(., var = "Year") %>% scale() %>% kmeans(3)
+
+fviz_cluster(object = fit, data = allIndex) + 
+  theme_bw() 
+
+```
+
+
+#### Breakpoint Analysis
+
+The breakpoint analysis estimates a change in the linear relationship in the data. The location of the break indicates there may be a difference in the relationship of the variable before and after that point. We find that breakpoints change depending on the variable. 
+
+##### Breakpoint of PC1 and PC2
+
+```{r breakpoint_pc1}
+# breapoint function
+bp_analysis <- function(x){
+  mod <-  lm(values ~ Year, data = x)
+  o <- tryCatch(segmented::segmented(mod, seg.Z = ~Year, npsi = 1),  # need to estimate bp
+                error = function(cond){cond})
+}
+
+set.seed(8)
+# Breakpoint by stat area
+pc1_breakpoint <- index_pca %>%
+  select(Year, PC1, PC2, PC3)  %>%
+  pivot_longer(cols = c(PC1, PC2, PC3), 
+               names_to = "Indicator", values_to = "values") %>% 
+  nest(data = c(-Indicator))%>% 
+  mutate(seg = purrr::map(data, ~bp_analysis(.x)),
+         bp = purrr::map(seg, ~data.frame(.x$psi))) %>% 
+  unnest(bp) %>% 
+  select(Indicator, Est., St.Err)
+
+knitr::kable(pc1_breakpoint)
+
+```
+
+
+### Lobster Data {.tabset}
+
+
+```{r biological_data}
+
+all_lob_data <- read_csv(here::here("Processed_Indicators/all_lob_data.csv")) 
+lob_breakpoints <- read_csv(here::here("Processed_Indicators/lob_breakpoints.csv"))
+unique(lob_breakpoints$name)
+```
+
+
+### Biological data analysis{.tabset}
+
+```{r analysis functions}
+
+xyPlot <- function(lob_name){
+  
+  x <- all_lob_data %>% 
+    filter(name == lob_name)
+  
+  x %>% 
+    left_join(index_pca) %>% 
+    ggplot() +
+    geom_point(aes(PC1, lob_index, color = Year)) + 
+    geom_smooth(aes(PC1, lob_index, color = Year), method = "gam", se =FALSE) +
+    facet_wrap(~stat_area+Sex, scales = "free_y") +
+    scale_color_viridis_c()
+}
+
+
+cor_fun <- function(lob_name){
+  all_lob_data  %>% 
+    filter(name %in% lob_name) %>% 
+    left_join(index_pca, by = c("Year")) %>% 
+    group_by(name, stat_area, Sex, Season) %>% 
+    summarise(corPC1 = corrr::correlate(lob_index, PC1)[[2]],
+              corPC2 = corrr::correlate(lob_index, PC2)[[2]],
+              corPC3 = corrr::correlate(lob_index, PC3)[[2]])
+}
+
+stepwiseAIC <- function(lob_name){
+  
+  x <- all_lob_data %>% 
+    filter(name == lob_name)
+  
+  x %>% 
+    left_join(index_pca) %>% 
+    select(Year, stat_area, lob_index, PC1, PC2, PC3, name, Sex) %>% 
+    group_by(stat_area, name, Sex) %>% 
+    nest() %>% 
+    mutate(data = map(data, ~na.omit(.x)),
+           aic = purrr::map(data, ~MASS::stepAIC(object = lm(lob_index ~ PC1 + PC2 + PC3 + Year, data = .x), direction = "both", trace = 0)),
+           stp = purrr::map(aic, broom::glance),
+           index = purrr::map(aic, ~as.character(.x$call$formula)),
+           model = paste(index[[1]][[2]], index[[1]][[1]], index[[1]][[3]])) %>% 
+    select(stat_area, stp, model, name) %>% 
+    unnest(c(stp, model)) %>% 
+    select(stat_area, name, Sex, r.squared, p.value, model)
+}
+
+
+aicModelGAM <- function(lob_name, k){
+  
+  breaks <- lob_breakpoints %>% 
+    filter(name == "ALSI")
+  
+  df <- all_lob_data %>% 
+    filter(name == "ALSI")
+  
+  df <- left_join(breaks, df, by = c("stat_area", "Season", "name", "Sex"))
+    
+  df$breakpoint1[is.na(df$breakpoint1)] <- 3000
+  
+  df$breakpoint2[is.na(df$breakpoint2)] <- 3000
+  
+  df <- df %>% rowwise() %>% 
+    mutate(Period1 = Year < breakpoint1,
+           Period2 = Year %in% seq(from = round(breakpoint1), to = round(breakpoint2), 1),
+           Period3 = Year > breakpoint2) %>% 
+    mutate(Period = if_else(Period1, "one", 
+                            if_else(Period2, "two", "three"))) %>% 
+    select(-Period1, -Period2, -Period3)
+  
+  df$Period <- factor(df$Period, levels = c("one", "two", "three"))
+  
+  gams <- df %>% 
+    left_join(index_pca) %>% 
+    group_by(stat_area, name, Season, Sex, breakpoint1, breakpoint2) %>% 
+    nest() %>% 
+    mutate(data = map(data, ~na.omit(.x)),
+           gams = purrr::map(data, ~mgcv::gam(lob_index ~ PC1 + PC2 + PC3 + s(Year, by = Period, k=4),
+                                              data = .x, select = TRUE, method="REML")),
+           tidied = map(gams, ~broom::tidy(.x)),
+           notes = map(gams, ~broom::glance(.x)), 
+           coefs = map(gams, ~summary(.x)$p.coeff), 
+           pval = map(gams, ~summary(.x)$p.pv))
+  return(gams)
+}
+
+gamInfo <- function(df, stat_area = "511-513", season = "all", sex = NA){
+  
+  if(is.na(sex)){
+    df1 <- aicSelGAM %>% filter(stat_area == "511-513", Season == "all")   
+  } else {
+    df1 <- aicSelGAM %>% filter(stat_area == "511-513", Season == "all", Sex == sex)  
+  }
+
+  summary(df1$gams[[1]])
+}
+
+aicModel_indicators <- function(x){
+  
+      if(is.character(x$stat_area)){
+      x <- select(x, -stat_area)
+      }
+  
+  x %>% 
+    left_join(index_pca) %>% 
+    na.omit() %>% 
+    select(stat_area, lob_index, bot_temp, bot_sal, MCC, predators, FirstMode, SecondMode, name) %>% 
+    group_by(stat_area, name) %>% 
+    nest() %>% 
+    mutate(aic = purrr::map(data, ~MASS::stepAIC(object = lm(lob_index ~ bot_temp + bot_sal + MCC + predators + FirstMode + SecondMode, data = .x), direction = "both", trace = 0)),
+           stp = purrr::map(aic, broom::glance),
+           index = purrr::map(aic, ~as.character(.x$call$formula)),
+           model = paste(index[[1]][[2]], index[[1]][[1]], index[[1]][[3]])) %>% 
+    select(stat_area, stp, model, name) %>% 
+    unnest(c(stp, model))
+}
+
+```
+
+#### ALSI index
+
+The ALSI index is not significantly correlated with PC1 or PC
+
+Correlation table
+
+```{r ALSI corrs}
+cor_fun("ALSI") %>% 
+  knitr::kable()
+```
+
+Scatter plot
+
+```{r xyALSI plot}
+xyPlot("ALSI")
+```
+
+AIC lm model selection table
+
+```{r aicALSI}
+stepwiseAIC("ALSI")
+aicSelGAM <- aicModelGAM("ALSI", 4)
+gamInfo(df = aicSelGAM, stat_area = "511-513", season = "all", sex = NA)
+```
+
+#### Subleagal index
+
+Correlation table
+
+```{r sublegal corrs}
+cor_fun("sublegal_cpue") %>% 
+  knitr::kable()
+```
+
+Scatter plot
+
+```{r xysublegal}
+xyPlot("sublegal_cpue")
+```
+
+AIC lm model selection table
+
+```{r aicsublegal}
+stepwiseAIC("sublegal_cpue")
+aicSelGAM <- aicModelGAM("sublegal_cpue", 4)
+gamInfo(df = aicSelGAM, stat_area = "511-513", season = "all", sex = NA)
+```
+
+
+#### ME yearly landings
+
+Correlation table
+
+```{r landings corrs}
+cor_fun("ME_landings") %>% 
+  knitr::kable()
+```
+
+Scatter plot
+
+```{r}
+xyPlot("ME_landings")
+```
+
+
+AIC lm model selection table
+
+```{r}
+stepwiseAIC("ME_landings")
+aicSelGAM <- aicModelGAM("ME_pounds", 5)
+gamInfo(df = aicSelGAM, stat_area = "511-513", season = "all", sex = NA)
+```
+
+
+#### ME Trawl index
+
+Correlation table
+
+```{r MEtrawl corrs}
+cor_fun("menh_biomass") %>% 
+  knitr::kable()
+
+cor_fun("menh_abundance") %>% 
+  knitr::kable()
+```
+
+Scatter plot
+
+```{r}
+xyPlot("menh_biomass")
+xyPlot("menh_abundance")
+```
+
+
+AIC lm model selection table
+
+```{r}
+stepwiseAIC("menh_biomass")
+stepwiseAIC("menh_abundance")
+aicSelGAM <- aicModelGAM("menh_biomass", 5)
+gamInfo(df = aicSelGAM, stat_area = "511-513", season = "all", sex = NA)
+aicSelGAM <- aicModelGAM("menh_abundance", 5)
+gamInfo(df = aicSelGAM, stat_area = "511-513", season = "all", sex = NA)
+```
+
+
+#### NEFSC trawl index
+
+Correlation table
+
+```{r NefscTrawl corrs}
+cor_fun("nefsc_biomass") %>% 
+  knitr::kable()
+
+cor_fun("nefsc_abundance") %>% 
+  knitr::kable()
+```
+
+Scatter plot
+
+```{r}
+xyPlot("nefsc_biomass")
+xyPlot("nefsc_abundance")
+```
+
+
+AIC lm model selection table
+
+```{r}
+stepwiseAIC("nefsc_biomass")
+stepwiseAIC("nefsc_abundance")
+aicSelGAM <- aicModelGAM("nefsc_biomass", 5)
+gamInfo(df = aicSelGAM, stat_area = "511-513", season = "all", sex = NA)
+aicSelGAM <- aicModelGAM("nefsc_abundance", 5)
+gamInfo(df = aicSelGAM, stat_area = "511-513", season = "all", sex = NA)
+```
+
+
+#### Cluster Analysis
+
+
+```{r cluster Analysis}
+lobData <- all_lob_data %>% 
+  filter(!name %in% c("NefscFQ2", "NefscFQ4", "NefscMQ2", "NefscMQ4")) %>% 
+  pivot_wider(names_from = name, values_from = lob_index)
+
+allIndex_scaled <- lobData %>%
+  filter(stat_area == "511-513",
+         Season == "all") %>% 
+  select(-Season, -stat_area, -Sex) %>% 
+  na.omit() %>% 
+  column_to_rownames(., var = "Year") %>% 
+  scale() 
+
+allIndex_wss <- allIndex_scaled %>% 
+  clusfun()
+
+# look for break in plot like a scree plot
+
+kmeans_scree <- ggplot() + 
+  geom_line(aes(x = c(1:12), y = allIndex_wss)) +
+  labs(x = "Number of Clusters",
+  y ="Within groups sum of squares")
+
+# K-Means Cluster Analysis
+fit <- allIndex_scaled %>% kmeans(4)
+
+fviz_cluster(object = fit, data = allIndex_scaled) + 
+  theme_bw() 
+```
+

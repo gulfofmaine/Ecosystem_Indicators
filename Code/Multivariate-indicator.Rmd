@@ -1,0 +1,1385 @@
+---
+title: "Indicators of Habitat and Ecosystem Change"
+author: "Matt Dzaugis"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    toc: TRUE
+    toc_float:
+        collapsed: FALSE
+    code_folding: hide
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+library(tidyverse)
+library(patchwork)
+library(factoextra)
+library(gmRi)
+# Set theme  
+theme_set(theme_bw())
+```
+
+
+`r use_gmri_style_rmd(css_file = "gmri_rmarkdown.css")`
+
+## Developing Indicators of Habitat and Ecosystem Change in the Gulf of Maine
+
+### Study area
+
+The focus area for this project is coastal Maine, extending from the coast to the eastern boundary of the NOAA statistical areas 511, 512, 513. 
+
+```{r study area, fig.width=4, fig.cap="Study region. NOAA statistical areas are indicated as colored polygons. Maine coastal current study region indicated by the black outlined open polygon"}
+
+usStates <- rnaturalearth::ne_states("united states of america", returnclass = "sf")
+ne_us <- usStates %>% filter(name == "Maine")
+statarea <- sf::st_read(paste0(gmRi::shared.path(group = "Res_Data", folder = "Shapefiles/Statistical_Areas"), "Statistical_Areas_2010_withnames.shp"), quiet = TRUE) %>% 
+  filter(Id %in% c(511, 512, 513)) %>% 
+  mutate(Id = as.factor(Id))
+statarea_sf <- sf::st_simplify(statarea, dTolerance = .05)
+mcc_turnoff_sf <- sf::st_read(here::here("Data/Shapefiles/MCC_turnoff/MCC_turnoff.shp"), quiet = TRUE)
+
+ggplot() +  
+  geom_sf(data = statarea_sf, aes(fill = Id)) + 
+  geom_sf(data= ne_us, fill = "grey") +
+  geom_sf(data = mcc_turnoff_sf, fill = "transparent", color = "black") +
+  scale_fill_discrete(name = "Stat area") +
+  theme(panel.background = element_blank(), 
+        panel.grid = element_blank(), 
+        axis.title = element_blank(),
+        axis.ticks = element_blank())
+```
+
+### Indicators {.tabset}
+
+The following indicators are used in this report
+
+* Surface and bottom temperature anomalies (FVCOM, OISST)
+* Surface and bottom salinity anomalies (FVCOM)
+* Maine Coastal Current Index (FVCOM)
+* Species-based lobster predator index (NOAA Trawl Survey)
+* Continuous Plankton Recordings
+
+
+```{r read_data}
+# Indicators
+FVCOM <- read_csv(here::here("Indicators/FVCOM_stat_area_temps.csv")) %>% filter(Year >= 1980)
+OISST <- read_csv(here::here("Indicators/OISST_stat_area_anoms.csv")) %>% filter(Date <= as.Date("2020-12-31"))
+sal <- read_csv(here::here("Indicators/FVCOM_stat_area_sal.csv")) %>% filter(Year >= 1980)
+maineCC <- read_csv(here::here("Indicators/mcc_pca_pc1_2.csv")) %>% 
+  rename("Year" = yr, "Month" = mon)
+species_index <- read_rds(here::here("Indicators/nmfs_trawl_lobster_predator_indices.rdata")) %>% 
+  rename("Year" = year)
+mcc_turnoff_subset <- read_csv("/Users/mdzaugis/Documents/EcosystemIndicators/Indicators/mcc_turnoff_subset.csv")
+cprData <- read_csv(here::here("Indicators/cpr_focal_pca_timeseries_period_1961-20017.csv")) %>% 
+  mutate(`First Mode` = `First Mode`*-1) %>%
+  rename("Year" = year,
+         "FirstMode" = `First Mode`,
+         "SecondMode" = `Second Mode`) %>% 
+  select(Year, FirstMode, SecondMode)
+```
+
+
+#### Temperature
+
+Source: FVCOM NECOFS Monthly Means [Thredds Link](http://www.smast.umassd.edu:8080/thredds/catalog/models/fvcom/NECOFS/Archive/Seaplan_33_Hindcast_v1/monthly_mean/catalog.html)
+Methods: 
+
+* Surface and bottom layer (1 m above bathymetry)
+* Regridded to regular 0.1 deg grid
+* Averaged over NOAA statistical area
+* Baseline climatology 1990-2020
+
+
+```{r Temperature}
+
+yrOISST <- OISST %>% 
+  mutate(Year = lubridate::year(Date)) %>% 
+  group_by(Year, stat_area) %>% 
+  summarise(temp_var = var(temp),
+            temp = mean(temp),
+            .groups = "drop") %>% 
+  mutate(stat_area = as.factor(stat_area))
+
+yrFVCOM <- FVCOM %>% 
+  group_by(Year, stat_area) %>% 
+  summarise(sur_temp = mean(sur_temp_anom),
+            bot_temp = mean(bot_temp_anom), 
+            sur_temp_var = var(sur_temp_anom),
+            bot_temp_var = var(bot_temp_anom),
+            .groups="drop") %>% 
+  mutate(stat_area = as.factor(stat_area))
+
+tPlot1 <- yrOISST %>% 
+  ggplot() +
+  geom_line(aes(Year, temp, col = stat_area)) + 
+  theme_bw()  +
+  labs(y = "SST anomalies (deg C)")
+
+tPlot2 <- yrFVCOM %>% 
+  ggplot() +
+  geom_line(aes(Year, bot_temp, col = stat_area)) + 
+  theme_bw() +
+  labs(y = "Bottom T anomalies (deg C)")
+
+tPlot1/tPlot2
+```
+
+
+#### Salinity
+
+Source: FVCOM NECOFS Monthly Means [Thredds Link](http://www.smast.umassd.edu:8080/thredds/catalog/models/fvcom/NECOFS/Archive/Seaplan_33_Hindcast_v1/monthly_mean/catalog.html)
+Methods: 
+
+* Surface and bottom layer (1 m above bathymetry)
+* Regridded to regular 0.1 deg grid
+* Averaged over NOAA statistical area for each year
+* Baseline climatology 1990-2017 (last year of data)
+
+
+```{r salinity}
+
+yrSal <- sal %>% 
+  group_by(Year, stat_area) %>% 
+  summarise(sur_sal = mean(sur_sal_anom),
+            bot_sal = mean(bot_sal_anom),
+            sur_sal_var = var(sur_sal_anom),
+            bot_sal_var = var(bot_sal_anom), .groups = "drop") %>% 
+  mutate(stat_area = as.factor(stat_area))
+
+sPlot1 <- yrSal %>% 
+  ggplot() +
+  geom_line(aes(Year, sur_sal, col = stat_area)) + 
+  theme_bw() +
+  labs(y = "SSS anomalies (deg C)")
+
+sPlot2 <- yrSal %>% 
+  ggplot() +
+  geom_line(aes(Year, bot_sal, col = stat_area)) + 
+  theme_bw() +
+  labs(y = "Bottom S anomalies (deg C)")
+
+sPlot1/sPlot2
+```
+
+#### Maine Coastal Current Index
+
+Source: FVCOM NECOFS Monthly Means [Thredds Link](http://www.smast.umassd.edu:8080/thredds/catalog/models/fvcom/NECOFS/Archive/Seaplan_33_Hindcast_v1/monthly_mean/catalog.html)
+Methods: 
+
+* Surface layer
+* Crop to Maine Coastal Current interest area
+* Regridded to regular 0.1 deg grid
+* Averaged over NOAA statistical area for each year
+* See MCC_index_report.Rmd for details
+* June-September index
+
+
+```{r MCC}
+yrMCC <- maineCC %>% 
+  filter(Month %in% c(6,7,8,9)) %>% 
+  group_by(Year) %>% 
+  summarise(MCCPC1 = mean(PC1))
+
+MCCPC_plot <- yrMCC %>% 
+  mutate(c = ifelse(MCCPC1 > 0, 1, 2)) %>% 
+  ggplot() + geom_col(aes(x = Year, y = MCCPC1, fill = as.factor(c))) + theme_bw() + theme(legend.position = "none") + labs(x = "Year", y = "Maine Coastal Current PC1")
+
+MCCPC_maps <- mcc_turnoff_subset %>% 
+  mutate(Year = lubridate::year(as.Date(Date)),
+         Month = lubridate::month(as.Date(Date))) %>% 
+  filter(Year %in% c(1980, 1983, 1990, 2011, 2000, 2016),
+         Month %in% c(6,7,8,9)) %>% 
+  group_by(Year, lat, lon) %>% 
+  summarise(u = mean(u),
+            v = mean(v), .groups = "drop") %>% 
+  mutate(vel = sqrt(u^2+v^2), 
+         PC = if_else(Year == 2010, "negative PC1", if_else(Year ==2013, "positive PC1", "neutral PC1"))) %>% 
+  ggplot() + geom_sf(data= ne_us, fill = "grey") + 
+  geom_segment(aes(x = lon, y = lat, xend=lon+u, yend=lat+v, color = vel), 
+               arrow = arrow(angle = 10, length = unit(0.05, "inches"), type = "closed")) + 
+  scale_color_viridis_c() + theme_bw() + 
+  coord_sf(datum = "+proj=longlat +datum=NAD83 +no_defs +ellps=GRS80 +towgs84=0,0,0") + 
+  facet_wrap(~Year, nrow = 1)+ 
+  theme(panel.background = element_blank(), panel.grid = element_blank(), 
+        axis.title = element_blank(), axis.text = element_blank(),
+        axis.ticks = element_blank())
+
+MCCPC_plot / MCCPC_maps
+```
+
+Maine Coastal Current full year index is highly correlated to salinity. Years where there is a strong offshore current are also years with higher salinity. When the downeast current is stronger, the water tends to be fresher. 
+
+```{r MCCYear}
+
+fullyrMCC <- maineCC %>% 
+  group_by(Year) %>% 
+  summarise(MCCPC1 = mean(PC1))
+
+MCCPC_plot2 <- fullyrMCC %>% 
+  mutate(c = ifelse(MCCPC1 > 0, 1, 2)) %>% 
+  ggplot() + geom_col(aes(x = Year, y = MCCPC1, fill = as.factor(c))) + theme_bw() + theme(legend.position = "none") + labs(x = "Year", y = "Maine Coastal Current PC1")
+
+MCCPC_maps2 <- mcc_turnoff_subset %>% 
+  mutate(Year = lubridate::year(as.Date(Date)),
+         Month = lubridate::month(as.Date(Date))) %>% 
+  filter(Year %in% c(1980, 1987, 2000,2012)) %>% 
+  group_by(Year, lat, lon) %>% 
+  summarise(u = mean(u),
+            v = mean(v), .groups = "drop") %>% 
+  mutate(vel = sqrt(u^2+v^2), 
+         PC = if_else(Year == 2010, "negative PC1", if_else(Year ==2013, "positive PC1", "neutral PC1"))) %>% 
+  ggplot() + geom_sf(data= ne_us, fill = "grey") + 
+  geom_segment(aes(x = lon, y = lat, xend=lon+u, yend=lat+v, color = vel), 
+               arrow = arrow(angle = 10, length = unit(0.05, "inches"), type = "closed")) + 
+  scale_color_viridis_c() + theme_bw() + 
+  coord_sf(datum = "+proj=longlat +datum=NAD83 +no_defs +ellps=GRS80 +towgs84=0,0,0") + 
+  facet_wrap(~Year, nrow = 1)+ 
+  theme(panel.background = element_blank(), panel.grid = element_blank(), 
+        axis.title = element_blank(), axis.text = element_blank(),
+        axis.ticks = element_blank())
+
+MCCPC_plot2 /sPlot1 / MCCPC_maps2 
+```
+
+#### Species Based Predator Index
+
+Source: NOAA NE Fisheries Trawl Survey
+Methods: 
+
+* Filtered to 15 lobster predators (ASMFC 2020)
+* Cropped to NOAA stat areas 511, 512, 513
+* Stratum abundance: abundance per trawl summed over stat area
+* Stratified abundance: abundance / km2 multiplied by the area of the strata
+
+
+```{r pred_index}
+yrSpecies_index <- 
+  species_index %>% 
+  filter(season == "Both",
+         `stratum id` != 'Strata 511-513') %>% 
+  dplyr::select(Year, `stratum id`, "predators" = `stratified biomass (kg)`)
+
+yrSpecies_index %>% 
+  ggplot() +
+  geom_line(aes(Year, predators, color = `stratum id` )) + theme_bw()
+
+```
+
+
+#### CPR data
+
+Source: Continuous Plankton Recording
+
+* First Mode = smaller zooplankton species explains ~ 50% of variance
+* Second Mode = Calanus explains ~ 26% of variance
+
+```{r cprData}
+cprData %>% 
+  pivot_longer(cols = c(FirstMode, SecondMode), 
+               names_to = "Mode", values_to = "values") %>% 
+  ggplot() +
+  geom_line(aes(Year, values, col = Mode)) +
+  theme_bw() +
+  scale_color_discrete(label = c("Small spp", "Calanus"))
+
+# area weighted
+# regional time series 
+# area weighted average 
+
+```
+
+
+
+### Indicators PCA{.tabset}
+
+
+```{r multivariate analysis}
+
+allIndex <- left_join(yrFVCOM, yrSal, by = c("Year", "stat_area")) %>% 
+  left_join(yrOISST, by = c("Year", "stat_area")) %>% 
+  left_join(yrMCC, by = c("Year" = "Year")) %>% 
+  left_join(yrSpecies_index, by = c("Year" = "Year",
+                                    "stat_area" = "stratum id")) %>% 
+  left_join(cprData, by = "Year") %>% 
+  na.omit() %>% 
+  select(-sur_temp, -sur_sal, -sur_sal_var, -bot_sal_var, -sur_temp_var, -bot_temp_var, -temp_var, -temp)
+
+
+```
+
+Previous analysis shows surface and bottom temperature and surface and bottom salinity load similarly in a PCA. To reduce variables only bottom temperature and salinity are used in the following PCA.
+
+* Data: Bottom temp, bottom salinity, MCC, Predator Index, CPR data mode one and two
+* Method: Principal components analysis 
+* Years: 1990-2016
+
+#### PCA Summary
+
+For each stat area, the first two principal components have eigenvalues greater than one and were retained for further analysis. PC1 and PC2 explain 29.7% and 24% of the variability, respectively, in stat area 511, 26.5% and 23.2% in stat area 512, and 29.6% and 26% in stat area 513. 
+
+```{r PCA_summary}
+
+# PCA by stat area
+indicator_pca <- allIndex %>% 
+  nest(data = c(-stat_area, -Year),
+       Year = Year) %>% 
+  mutate(pca = map(data, ~prcomp(.x, scale. = TRUE, center = TRUE)),
+         pca_index = map(pca, ~tibble("PC1" = .x$x[,1],
+                                      "PC2" = .x$x[,2],
+                                      "PC3" = .x$x[,3])))
+
+index_pca <- indicator_pca %>% 
+  unnest(c(pca_index, Year, data)) %>% 
+  mutate(PC2 = if_else(stat_area == "511", PC2*-1, PC2),
+         PC1 = if_else(stat_area == "512", PC1*-1, PC1),
+         PC3 = if_else(stat_area == "513", PC3*-1, PC3))
+
+PCA511 <- data.frame(summary(indicator_pca$pca[[1]])$importance) %>% 
+  rownames_to_column("Result") %>%  mutate(stat_area = "511")
+PCA512 <- data.frame(summary(indicator_pca$pca[[2]])$importance) %>% 
+  rownames_to_column("Result") %>%  mutate(stat_area = "512")
+PCA513 <- data.frame(summary(indicator_pca$pca[[3]])$importance) %>% 
+  rownames_to_column("Result") %>%  mutate(stat_area = "513")
+
+PCA_table <- bind_rows(PCA511,PCA512,PCA513)
+
+knitr::kable(PCA_table)
+```
+
+
+```{r screeplots}
+scree1 <- fviz_eig(indicator_pca$pca[[1]], ylab = "% variance explained") + scale_y_continuous(limits = c(0,60))
+scree2 <- fviz_eig(indicator_pca$pca[[2]], ylab = "% variance explained") + scale_y_continuous(limits = c(0,60))
+scree3 <- fviz_eig(indicator_pca$pca[[3]], ylab = "% variance explained") + scale_y_continuous(limits = c(0,60))
+
+#scree1 / scree2 / scree3
+```
+
+
+
+#### PC time series
+
+
+Below are the time series for PC1, PC2, and PC3. PC1 and PC2 time series are highly correlated between stat areas. 
+
+```{r pcaTimeSeries}
+
+PC1plot <- index_pca %>% 
+  ggplot() + 
+  geom_line(aes(Year, PC1, color = stat_area))
+
+PC2plot <- index_pca %>% 
+  ggplot() + 
+  geom_line(aes(Year, PC2, color = stat_area))
+
+PC3plot <- index_pca %>% 
+  ggplot() + 
+  geom_line(aes(Year, PC3, color = stat_area))
+
+pc1cors <- index_pca %>% 
+  select(stat_area, PC1, PC2, PC3, Year) %>% 
+  pivot_wider(names_from = stat_area, values_from = c(PC1, PC2, PC3)) %>% 
+  summarise("511_512" = corrr::correlate(PC1_511, PC1_512)[[2]],
+         "511_513" = corrr::correlate(PC1_511, PC1_513)[[2]],
+         "512_513" = corrr::correlate(PC1_512, PC1_513)[[2]])
+
+pc2cors <- index_pca %>% 
+  select(stat_area, PC1, PC2, PC3, Year) %>% 
+  pivot_wider(names_from = stat_area, values_from = c(PC1, PC2, PC3)) %>% 
+  summarise("511_512" = corrr::correlate(PC2_511, PC2_512)[[2]],
+         "511_513" = corrr::correlate(PC2_511, PC2_513)[[2]],
+         "512_513" = corrr::correlate(PC2_512, PC2_513)[[2]])
+
+pc3cors <- index_pca %>% 
+  select(stat_area, PC1, PC2, PC3, Year) %>% 
+  pivot_wider(names_from = stat_area, values_from = c(PC1, PC2, PC3)) %>% 
+  summarise("511_512" = corrr::correlate(PC3_511, PC3_512)[[2]],
+         "511_513" = corrr::correlate(PC3_511, PC1_513)[[2]],
+         "512_513" = corrr::correlate(PC3_512, PC3_513)[[2]])
+
+PC1plot / PC2plot / PC3plot
+```
+
+
+#### Loadings plot
+
+Indicators load similarly for each stat area. The Maine coastal current, first mode (small zooplankton), and second mode (Calanus) tend to load together. The lobster predator index has the most variable relationship to PC1 and PC2 with respect to stat area. In stat area 512 and 513, predators loads with bottom temperature. In area 511, predators load separated from the rest of the indicators and has a stronger influence on PC2 than PC1. Bottom salinity and the plankton FirstMode (Calanus) tend to load similarly for each stat area. 
+
+Interpretation:
+
+Stat area 511: 
+
+* PC1: Bottom sal and temp negatively correlated to MCC and small zooplankton
+* PC2: Bottom sal and Calanus positively correlated and negatively correlated to lob predators
+
+Stat area 512:
+
+* PC1: Bottom temp is negatively correltated with MCC and Calanus
+* PC2: most strongly influenced by bottom salinity
+
+Stat area 513:
+
+* PC1: Most influenced by bottom temp and predators
+* PC2: Bottom salinity, MCC, Calanus all load strongly 
+
+
+
+
+```{r loadings, echo=FALSE, message=FALSE, warning=FALSE, fig.cap="Figure 4. Loadings of the variables"}
+
+PC1loadings511 <- data.frame(indicator_pca$pca[[1]]$rotation) %>% 
+  mutate(stat_area = "511",
+         PC2 = PC2*-1) %>% 
+  rownames_to_column("Indicator")
+
+PC1loadings512 <- data.frame(indicator_pca$pca[[2]]$rotation) %>% 
+  mutate(stat_area = "512",
+         PC1 = PC1*-1) %>% 
+  rownames_to_column("Indicator")
+
+PC1loadings513 <- data.frame(indicator_pca$pca[[3]]$rotation) %>% 
+  mutate(stat_area = "513",
+         PC3 = PC3*-1) %>% 
+  rownames_to_column("Indicator")
+
+PC1loadings <- bind_rows(PC1loadings511, PC1loadings512, PC1loadings513)
+
+loadings_plot <- PC1loadings %>% 
+  ggplot() + 
+  geom_text(aes(PC1, PC2, label = Indicator)) +
+  geom_segment(aes(x = 0, y = 0, xend = PC1, yend = PC2), arrow = arrow(length = unit(.3, "cm"))) +
+  facet_wrap(~stat_area)
+
+loadingsTable <- PC1loadings %>% 
+  select(stat_area, Indicator, PC1, PC2, PC3) %>% 
+  mutate(PC1 = round(PC1, 3),
+         PC2 = round(PC2, 3),
+         PC3 = round(PC3, 3)) %>% 
+  pivot_wider(names_from = stat_area, values_from = c(PC1, PC2, PC3)) %>% 
+  knitr::kable()
+
+loadings_barplot <- PC1loadings %>% 
+  select(stat_area, Indicator, PC1, PC2) %>%
+  pivot_longer(cols = c(PC1, PC2), names_to = "Mode", values_to = "values") %>% 
+  ggplot() +
+  geom_col(aes(x = Indicator, y = values, fill = Mode), position = position_dodge(width = .5)) + 
+  facet_wrap(~stat_area) +
+  theme(axis.text.x = element_text(angle = 45))
+
+loadings_plot
+
+loadingsTable
+
+loadings_barplot
+
+
+
+```
+
+
+#### Chronolgical cluster
+
+The cluster plot groups years that are most similar based on PC1 and PC2. For this analysis stat areas were grouped together. 
+
+```{r indicators_cluster}
+
+allIndex_ca <- allIndex %>% 
+  group_by(Year) %>% 
+  pivot_wider(names_from = stat_area,
+              values_from = c(bot_temp, bot_sal, MCCPC1, predators, FirstMode, SecondMode)) %>% 
+  column_to_rownames("Year")
+
+allIndex_ca <- scale(allIndex_ca)
+
+# determine number of clusters
+wss <- (nrow(allIndex_ca)-1)*sum(apply(allIndex_ca,2,var)) # get sum of squares
+wss[12]
+for (i in 2:12) wss[i] <- sum(kmeans(allIndex_ca,
+   centers=i)$withinss)
+
+# look for break in plot like a scree plot
+kmeans_scree <- ggplot() + 
+  geom_line(aes(x = c(1:12), y = wss)) +
+  labs(x = "Number of Clusters",
+  y ="Within groups sum of squares")
+
+# K-Means Cluster Analysis
+fit <- kmeans(allIndex_ca, 3) # 4 cluster solution
+
+# get cluster means
+#aggregate(allIndex_ca,by=list(fit$cluster),FUN=mean)
+
+# append cluster assignment
+lobData_cluster <- data.frame(allIndex_ca, fit$cluster)
+
+# Cluster Plot against 1st 2 principal components
+
+# vary parameters for most readable graph
+indicators_cluster <- cluster::clusplot(allIndex_ca, fit$cluster, color=TRUE, shade=TRUE,
+   labels=2, lines=0)
+
+indicators_cluster
+```
+
+
+#### Breakpoint Analysis
+
+The breakpoint analysis estimates a change in the linear relationship in the data. The location of the break indicates there may be a difference in the relationship of the variable before and after that point. We find that breakpoints change depending on the variable. 
+
+##### Breakpoint of indicators
+
+```{r Breakpoint analysis}
+
+# breapoint function
+bp_analysis <- function(x){
+  mod <-  lm(values ~ Year, data = x)
+  o <- tryCatch(segmented::segmented(mod, seg.Z = ~Year, psi = c(2005)),  # need to estimate bp
+                error = function(cond){cond})
+}
+
+set.seed(25)
+# Breakpoint by stat area
+indicator_breakpoint <- allIndex %>%
+  pivot_longer(cols = c(bot_temp, bot_sal, MCCPC1, predators, FirstMode, SecondMode), 
+               names_to = "Indicator", values_to = "values") %>% 
+  nest(data = c(-stat_area, -Indicator)) %>% 
+  mutate(seg = purrr::map(data, ~bp_analysis(.x)),
+         bp = purrr::map(seg, ~data.frame(.x$psi)))
+
+# get fitted values and plot over data
+bp_plots <- list()
+for(i in 1:length(indicator_breakpoint$data)){
+  
+  name <- paste0(indicator_breakpoint$stat_area[[i]], "_", indicator_breakpoint$Indicator[[i]])
+  
+    # get the fitted data
+  fitted_df <- fitted(indicator_breakpoint$seg[[i]])
+  
+  if(is.null(fitted_df)){
+    
+    "check error log"
+    
+  } else {
+      
+    seg_model <- data.frame(Year = indicator_breakpoint$data[[i]]$Year, values = fitted_df)
+  
+  # plot the fitted model
+  
+    bp_plots[[name]] <- indicator_breakpoint$data[[i]] %>% 
+      ggplot() + geom_line(aes(Year, values)) +
+      geom_line(data = seg_model, aes(x = Year, y = values), col = "dark red")
+  }
+}
+
+
+
+# extract the breakpoints
+break_years <- indicator_breakpoint %>% 
+  unnest(bp) %>% 
+  select(stat_area, Indicator, Est.) %>% 
+  mutate(Indicator = factor(Indicator, levels = c("MCCPC1", "predators", "bot_sal", "bot_temp", "FirstMode", "SecondMode")))
+
+# plot break points
+ggplot(break_years) +
+  geom_point(aes(Est., Indicator, color = stat_area, shape = stat_area), size = 3) +
+  scale_color_grey(name = "Stat area") +
+  scale_shape(name = "Stat area") +
+  labs(x = "Estimated breakpoint")
+
+```
+
+
+##### Breakpoint of PC1 and PC2
+
+```{r breakpoint_pc1}
+set.seed(8)
+# Breakpoint by stat area
+pc1_breakpoint <- index_pca %>%
+  select(stat_area, Year, PC1, PC2)  %>%
+  pivot_longer(cols = c(PC1, PC2), 
+               names_to = "Indicator", values_to = "values") %>% 
+  nest(data = c(-stat_area, -Indicator))%>% 
+  mutate(seg = purrr::map(data, ~bp_analysis(.x)),
+         bp = purrr::map(seg, ~data.frame(.x$psi))) %>% 
+  unnest(bp) %>% 
+  select(stat_area, Indicator, Est., St.Err)
+
+knitr::kable(pc1_breakpoint)
+
+```
+
+
+### Lobster Data {.tabset}
+
+
+```{r biological_data}
+
+ALSI <- read_csv(here::here("Biological_data/SettlementIndex.csv"))
+ME_landings <- read_csv(here::here("Biological_data/ME_lob_landings_1950_2019.csv"))
+ASFMCindicies <- read_csv(here::here("Biological_data/GOMGBK_indices.csv")) %>% 
+  rename("lob_index" = Index, "name" = Survey)
+GOMindex <- ASFMCindicies %>% 
+  filter(name %in% c("MeFQ2", "MeMQ2"))
+NEFSCindex <- ASFMCindicies %>% 
+  filter(name %in% c("NefscFQ2", "NefscMQ2"))
+sublegal <- readxl::read_excel(here::here("Biological_data/RawData.xlsx")) %>% 
+  rename("Year" = year, "Month" = month, "stat_area" = `stat area`)
+MEDMR_trawl <- read_csv(paste0(gmRi::box_path("Res_Data", "Maine_NH_Trawl"), "MaineDMR_Trawl_Survey_Catch_Data_2021-05-14.csv")) %>% 
+  filter(Common_Name == "Lobster American")
+NEFSC_meIndex <- read_csv(here::here("Biological_data/nmfs_trawl_lobster_indices.csv")) %>% 
+  rename("Year" = est_year, "stat_area" = lobster_strata) %>% 
+  mutate(stat_area = as.factor(stat_area))
+
+```
+
+
+#### ALSI index
+
+Source: [American Lobster Settlement Index data portal](https://safis.accsp.org:8443/safis_prod/f?p=LSI:LOGIN)
+Sites:
+
+* Jonesport, Length: 2002-2018, stat area: 511
+* Mt. Desert Island, Length: 2000-2018, stat area: 512
+* Outer Penobscot Bay, Length: 2000-2018, stat area: 512
+* Mid-coast, Length: 1989-2018, stat area: 513
+* Casco Bay, Length: 2000-2018, stat area: 513
+* York, Length: 2000-2018, stat area: 513
+
+Methods:
+
+* Sites grouped by NOAA stat area
+* Time series cropped to shortest length
+* Averaged by stat area
+
+```{r ALSI_process}
+
+statKey <- data.frame("Location" = c('Jonesport',
+'Mt. Desert Island',
+'Outer Pen Bay',
+'Mid-coast',
+'Casco Bay',
+'York'), "stat_area" = c(511,512,512,513,513,513))
+
+ALSI <- ALSI %>% 
+  left_join(statKey, by = "Location") %>% 
+  filter(!is.na(stat_area),
+         Year >= 2000) %>% 
+  group_by(stat_area, Year) %>% 
+  summarise(lob_index = mean(Yoy_density), .groups = "drop") %>% 
+  mutate(stat_area = as.factor(stat_area),
+         name = "ALSI") %>% 
+  na.omit()
+
+ALSI_cors <- ALSI %>% 
+  left_join(index_pca, by = c("Year", "stat_area")) %>% 
+  group_by(stat_area, name) %>% 
+  summarise(corPC1 = corrr::correlate(lob_index, PC1)[[2]],
+            corPC2 = corrr::correlate(lob_index, PC2)[[2]],
+            corPC3 = corrr::correlate(lob_index, PC3)[[2]])
+
+ALSI_plot <- ALSI %>% 
+  ggplot() +
+  geom_line(aes(Year, lob_index, col = as.factor(stat_area))) +
+  scale_color_discrete(name = "Stat area") +
+  labs(y = "ALSI yoy density")
+
+ALSI_plot
+
+```
+
+#### Sublegal index
+
+Source: Ventless trap survey
+
+Calculate stratified means
+
+* Calculate catch per unit effort for each site for each year
+* Multiply cpue by the depth strata area factor
+* Group by stat area, sum the outputs 
+
+
+```{r sublegal variance}
+
+strata_area <- tibble("stat_area" = c(511,512,513),
+                                 "1" = c(122, 566, 315),
+                                 "2" = c(82, 395, 338),
+                                 "3" = c(92, 420, 198)) %>% 
+  pivot_longer(cols = c("1", "2", "3"), names_to = "depth stratum", values_to = "strata_area") %>% 
+  group_by(stat_area) %>% 
+  mutate(`depth stratum` = as.numeric(`depth stratum`),
+         total = sum(strata_area)) 
+
+# average number of lobsters per trap haul at each site
+u <- sublegal  %>% 
+  group_by(Year, `site ID`, `effort ID`, stat_area, `depth stratum`) %>% 
+  summarise(n_lob = sum(`sample ID` != 0), .groups = "drop") %>% 
+  group_by(Year, `site ID`, stat_area, `depth stratum`) %>% 
+  summarise(n_lob_u = mean(n_lob), .groups = "drop")
+
+# average number of lobsters per trap haul at each depth stratum within a stat area
+v <- sublegal  %>% 
+  group_by(stat_area, `depth stratum`, Year, `site ID`, `effort ID`) %>% 
+  summarise(n_lob = sum(`sample ID` != 0), .groups = "drop") %>% 
+  group_by(stat_area, `depth stratum`, Year) %>% 
+  summarise(n_lob_v = mean(n_lob), .groups = "drop")
+
+# choose the relevant v which corresponds to the depth strata that u is in ("stat_area", "depth stratum", "Year"). Each site will have one w value
+w <- left_join(v, u, by = c("stat_area", "depth stratum", "Year")) %>% 
+  mutate(w = (n_lob_v-n_lob_u)^2)
+
+#sum of all w within the same depth strata in a stat area
+x <- w %>% 
+  group_by(`depth stratum`, stat_area, Year) %>% 
+  summarise(x = sum(w), .groups = "drop")
+
+#number of sites per depth stratum within a given stat area
+y <- sublegal %>% 
+  group_by(stat_area, `depth stratum`, Year) %>% 
+  summarise(site_ID = unique(`site ID`)) %>% 
+  summarise(y = n(), .groups = "drop")
+
+#if done correctly, each stat area per year should have three z values, one for each depth stratum
+z <- left_join(x, y, by = c("stat_area", "depth stratum", "Year")) %>% 
+  mutate(z = x/(y-1))
+
+# Calculate stat area variance 
+sublegal_vari <- left_join(z, strata_area, by = c("stat_area", "depth stratum")) %>% 
+  mutate(a = 1/(total^2),
+         b = strata_area*(strata_area-y)*(z/y)) %>% 
+  group_by(stat_area, Year, a) %>% 
+  summarise(stat_sum = sum(b), .groups = "drop") %>% 
+  mutate(vari = a*stat_sum,
+         sd = sqrt(vari))
+
+```
+
+
+```{r sublegal lobs}
+
+strata_area_factor <- tibble("stat_area" = c(511,512,513),
+                                 "1" = c(0.412162162, 0.409847936, 0.370152761),
+                                 "2" = c(0.277027027, 0.28602462, 0.397179788),
+                                 "3" = c(0.310810811, 0.304127444, 0.23266745)) %>% 
+  pivot_longer(cols = c("1", "2", "3"), names_to = "depth stratum", values_to = "strata_scale") %>% 
+  mutate(`depth stratum` = as.numeric(`depth stratum`))
+
+sublegal_cpue <- sublegal %>% 
+  group_by(`trip ID`, `trip date`, Year, Month, `site ID`, 
+           `depth stratum`, stat_area,
+           `soak nights`, depth, `depth unit`, 
+           `latitude (dd)`, `longitude (dd)`, `effort ID`) %>% 
+  mutate(lob_count = sum(`sample ID` != 0), 
+            lob_effort = lob_count/`soak nights`) %>% 
+  group_by(`trip ID`, `trip date`, Year, Month, 
+           `site ID`, `depth stratum`, stat_area,
+           `soak nights`, depth, `depth unit`, 
+           `latitude (dd)`, `longitude (dd)`) %>% 
+  summarise(cpue = sum(lob_effort)/sum(!is.na(unique(`effort ID`))), .groups = "drop") %>% 
+  left_join(strata_area_factor, by = c("stat_area", "depth stratum")) %>% 
+  mutate(stratified_cpue = cpue*strata_scale,
+         stat_area = as.factor(stat_area)) %>% 
+  group_by(stat_area, Year) %>% 
+  summarise(lob_index = sum(stratified_cpue), .groups = "drop") %>% 
+  mutate(name = "sublegal_cpue")
+
+sub_leagal_cors <- sublegal_cpue %>% 
+  left_join(index_pca, by = c("Year", "stat_area")) %>% 
+  group_by(stat_area, name) %>% 
+  summarise(corPC1 = corrr::correlate(lob_index, PC1)[[2]],
+            corPC2 = corrr::correlate(lob_index, PC2)[[2]],
+            corPC3 = corrr::correlate(lob_index, PC3)[[2]])
+            
+sublegal_plot <- sublegal_cpue %>% 
+  ggplot() +
+  geom_line(aes(Year, lob_index, col = as.factor(stat_area))) +
+  scale_color_discrete(name = "Stat area") +
+  labs(y = "Sublegal lobster cpue")
+
+sublegal_var_plot <- sublegal_vari %>% 
+  ggplot() +
+  geom_line(aes(Year, vari, col = as.factor(stat_area))) +
+  scale_color_discrete(name = "Stat area") +
+  labs(y = "Sublegal lobster variance")
+
+sublegal_plot
+
+```
+
+
+#### ME-NH Trawl Survey
+
+Source: ME-NH Trawl Survey
+
+Calculate stratified means
+
+* Calculate catch per unit effort for each site for each year
+* Multiply cpue by the depth strata area factor
+* Group by stat area, sum the outputs 
+
+```{r ME trawl survey data}
+
+stat_area_trawl_key <- tibble("stat_area" = c(511, 512, 512, 513, 513),
+                              "Region" = c(5,4,3,2,1))
+
+DMR_strata_area <- tibble("Stratum" = c("1", "2", "3", "4"),
+                          "1" = c(253.27, 214.22, 227.35, 225.65),
+                          "2" = c(279.63, 191.23, 211.66, 263.49),
+                          "3" = c(259.62, 262.90, 280.03, 183.69),
+                          "4" = c(205.30, 206.12, 310.49, 170.72),
+                          "5" = c(138.54, 220.49, 365.04, 196.11)) %>% 
+  pivot_longer(cols = c("1", "2", "3", "4", "5"), names_to = "Region", values_to = "strata_area") %>% 
+  group_by(Region) %>% 
+  mutate(Stratum = as.numeric(Stratum),
+         total = sum(strata_area),
+         Region = as.numeric(Region)) %>% 
+  left_join(stat_area_trawl_key) %>% 
+  group_by(stat_area, Stratum) %>% 
+  summarise(strata_area = sum(strata_area),
+            total = sum(total))
+
+# average number of lobsters per tow 
+u <- MEDMR_trawl %>% 
+  left_join(stat_area_trawl_key) %>% 
+  group_by(Season, Year, Tow_Number, stat_area, Stratum) %>% 
+  summarise(n_lob_u = sum(Expanded_Weight_kg, na.rm = TRUE), .groups = "drop")
+
+# average number of lobsters per trap haul at each depth stratum within a stat area
+v <- MEDMR_trawl %>%
+  left_join(stat_area_trawl_key) %>%  
+  group_by(stat_area, Stratum, Year, Season) %>% 
+  summarise(n_lob_v = mean(Expanded_Weight_kg, na.rm = TRUE), .groups = "drop")
+
+# choose the relevant v which corresponds to the depth strata that u is in ("stat_area", "depth stratum", "Year"). Each site will have one w value
+w <- left_join(v, u, by = c("stat_area", "Stratum", "Year", "Season")) %>% 
+  mutate(w = (n_lob_v-n_lob_u)^2)
+
+#sum of all w within the same depth strata in a stat area
+x <- w %>% 
+  group_by(Stratum, stat_area, Year, Season) %>% 
+  summarise(x = sum(w), .groups = "drop")
+
+#number of sites per depth stratum within a given stat area
+y <- MEDMR_trawl %>%
+  left_join(stat_area_trawl_key) %>% 
+  group_by(stat_area, Stratum, Year, Season) %>% 
+  summarise(Tow_number = unique(Tow_Number, na.rm = TRUE)) %>% 
+  summarise(y = n(), .groups = "drop")
+
+#if done correctly, each stat area per year should have three z values, one for each depth stratum
+z <- left_join(x, y, by = c("stat_area", "Stratum", "Year", "Season")) %>% 
+  mutate(z = x/(y-1))
+
+# Calculate stat area variance 
+MEDMR_vari <- left_join(z, DMR_strata_area, by = c("stat_area", "Stratum")) %>% 
+  mutate(a = 1/(total^2),
+         b = strata_area*(strata_area-y)*(z/y)) %>% 
+  group_by(stat_area, Year, a, Season) %>% 
+  summarise(stat_sum = sum(b), .groups = "drop") %>% 
+  mutate(vari = a*stat_sum,
+         sd = sqrt(vari))
+
+medmr_vari_plot <- MEDMR_vari %>% 
+  ggplot() + 
+  geom_line(aes(Year, vari, col = as.factor(stat_area))) +
+  facet_wrap(~Season)
+```
+
+
+```{r MEDMR_trawl cpue}
+
+MEDMR_cpue <- MEDMR_trawl %>%
+  left_join(stat_area_trawl_key) %>%  
+  group_by(Year, Season, stat_area, Stratum)%>%
+  mutate(tows=n_distinct(Tow_Number))%>%
+  group_by(Year, Season, tows, stat_area, Stratum) %>%
+  summarise(weight = sum(Expanded_Weight_kg,na.rm=TRUE), 
+            catch=sum(Expanded_Catch,na.rm=TRUE))%>%
+  mutate(weight_tow = weight/tows, 
+         catch_tow = catch/tows) %>% 
+  left_join(DMR_strata_area) %>% 
+  mutate(stratified_wpue = weight_tow*(strata_area/total),
+         stratified_cpue = catch_tow*(strata_area/total)) %>% 
+  group_by(stat_area, Year, Season) %>% 
+  summarise(lob_cpue = sum(stratified_cpue), 
+            lob_index = sum(stratified_wpue),
+            .groups = "drop") %>% 
+  mutate(stat_area = as.factor(stat_area),
+         name = "ME-NH_trawl")
+
+MEDMR_cors <- MEDMR_cpue %>% 
+  left_join(index_pca, by = c("Year", "stat_area")) %>% 
+  group_by(stat_area, Season) %>% 
+  summarise(corPC1 = corrr::correlate(lob_index, PC1)[[2]],
+            corPC2 = corrr::correlate(lob_index, PC2)[[2]],
+            corPC3 = corrr::correlate(lob_index, PC3)[[2]])
+            
+
+MEDMR_cpue %>% 
+  ggplot() +
+  geom_line(aes(Year, lob_index, col = as.factor(stat_area))) +
+  scale_color_discrete(name = "Stat area") +
+  labs(y = "ME-NH Trawl lobster cpue") +
+  facet_wrap(~Season)
+```
+
+
+#### ME yearly landings
+
+Yearly Maine lobster landings in pounds from 1950-2020.
+
+Use a breakpoint in the the landings and use that as the point to run the regression.
+
+```{r yearly_landingd}
+
+ME_landings_cors <- ME_landings %>% 
+  left_join(index_pca, by = c("Year")) %>% 
+  group_by(stat_area) %>% 
+  summarise(corPC1 = corrr::correlate(Pounds, PC1)[[2]],
+            corPC2 = corrr::correlate(Pounds, PC2)[[2]],
+            corPC3 = corrr::correlate(Pounds, PC3)[[2]]) 
+
+ME_pounds <- ME_landings %>% 
+  mutate(name = "ME_landings") %>% 
+  select(Year, "lob_index" = Pounds, name) 
+
+ME_pounds %>% 
+  ggplot() +
+  geom_line(aes(Year, lob_index)) +
+  labs(y = "Maine lobster landings (pounds)")
+
+```
+
+
+#### Nefsc index
+
+ASFMC lobster abundance index based on the NE fisheries trawl survey. Time spans 1978-2018 and indices are split into seasons and sex.
+
+```{r Nefscindex}
+NEFSC_cors <- NEFSCindex %>% 
+  left_join(index_pca, by = "Year") %>% 
+  group_by(stat_area, name) %>% 
+  summarise(corPC1 = corrr::correlate(lob_index, PC1)[[2]],
+            corPC2 = corrr::correlate(lob_index, PC2)[[2]],
+            corPC3 = corrr::correlate(lob_index, PC3)[[2]], .groups = "drop")
+
+NEFSCindex %>% 
+  ggplot() +
+  geom_line(aes(Year, lob_index)) +
+  facet_wrap(~name) +
+  labs(y = "Nefsc trawl lob abundance index")
+
+```
+
+
+#### NMFS stat area 511-513
+
+Lobster biomass and abundance for statistical areas 511-513.
+
+Offshore trawl increasing faster than landings - relative exploitation declining. 
+
+Impose break with the biological data
+
+Lobster assessment
+
+```{r nmfs_trawl}
+
+NEFSC_meIndex_cors <- NEFSC_meIndex %>% 
+  left_join(index_pca, by = c("Year", "stat_area")) %>% 
+  group_by(stat_area) %>% 
+  summarise(corPC1 = corrr::correlate(`stratified biomass (kg)`, PC1)[[2]],
+            corPC2 = corrr::correlate(`stratified biomass (kg)`, PC2)[[2]],
+            corPC3 = corrr::correlate(`stratified biomass (kg)`, PC3)[[2]], .groups = "drop")
+
+nmfsBIO <- NEFSC_meIndex %>% 
+  ggplot() +
+  geom_line(aes(Year, `stratified biomass (kg)`, col = as.factor(stat_area))) +
+  facet_wrap(~season) +
+  labs(y = "Lobster biomass") +
+  scale_color_discrete(name = "Stat area")
+
+nmfsBIO_var <- NEFSC_meIndex %>% 
+  ggplot() +
+  geom_line(aes(Year, bio_var, col = as.factor(stat_area))) +
+  facet_wrap(~season) +
+  labs(y = "variance") +
+  scale_color_discrete(name = "Stat area")
+
+nmfsNUM <- NEFSC_meIndex %>% 
+  ggplot() +
+  geom_line(aes(Year, `stratified abundance`, col = as.factor(stat_area))) +
+  facet_wrap(~season) +
+  labs(y = "Lobster abundance") +
+  scale_color_discrete(name = "Stat area")
+
+nmfsNUM_var <- NEFSC_meIndex %>% 
+  ggplot() +
+  geom_line(aes(Year, abun_var, col = as.factor(stat_area))) +
+  facet_wrap(~season) +
+  labs(y = "variance") +
+  scale_color_discrete(name = "Stat area")
+
+nmfsBIO / nmfsNUM 
+
+```
+
+
+### Biological data analysis{.tabset}
+
+```{r analysis functions}
+
+xyPlot <- function(x){
+  x %>% 
+    left_join(index_pca) %>% 
+    na.omit() %>% 
+    ggplot() +
+    geom_point(aes(PC1, lob_index, color = stat_area)) + 
+    geom_smooth(aes(PC1, lob_index, color = stat_area), method = "lm", se = FALSE) +
+    facet_wrap(~name)
+}
+
+aicModel <- function(x){
+  x %>% 
+    left_join(index_pca) %>% 
+    na.omit() %>% 
+    select(stat_area, lob_index, PC1, PC2, PC3, name) %>% 
+    group_by(stat_area, name) %>% 
+    nest() %>% 
+    mutate(aic = purrr::map(data, ~MASS::stepAIC(object = lm(lob_index ~ PC1 + PC2 + PC3, data = .x), direction = "both", trace = 0)),
+           stp = purrr::map(aic, broom::glance),
+           index = purrr::map(aic, ~as.character(.x$call$formula)),
+           model = paste(index[[1]][[2]], index[[1]][[1]], index[[1]][[3]])) %>% 
+    select(stat_area, stp, model, name) %>% 
+    unnest(c(stp, model))
+}
+
+
+aicModel_indicators <- function(x){
+  x %>% 
+    left_join(index_pca) %>% 
+    na.omit() %>% 
+    select(stat_area, lob_index, bot_temp, bot_sal, MCCPC1, predators, FirstMode, SecondMode, name) %>% 
+    group_by(stat_area, name) %>% 
+    nest() %>% 
+    mutate(aic = purrr::map(data, ~MASS::stepAIC(object = lm(lob_index ~ bot_temp + bot_sal + MCCPC1 + predators + FirstMode + SecondMode, data = .x), direction = "both", trace = 0)),
+           stp = purrr::map(aic, broom::glance),
+           index = purrr::map(aic, ~as.character(.x$call$formula)),
+           model = paste(index[[1]][[2]], index[[1]][[1]], index[[1]][[3]])) %>% 
+    select(stat_area, stp, model, name) %>% 
+    unnest(c(stp, model))
+}
+
+##################################################
+
+# break out trawl survey by stat area
+# see what groups together to see if there is a distinction in the life history patterns
+# Look at coefficients to see if PC1 is always the biggest
+
+
+```
+
+#### ALSI index
+
+The ALSI index is not significantly correlated with PC1 or PC
+
+Correlation table
+
+```{r ALSI corrs}
+ALSI_cors %>% 
+  na.omit() %>% 
+  knitr::kable()
+```
+
+Scatter plot
+
+```{r xyALSI plot}
+
+xyPlot(ALSI)
+
+```
+
+AIC lm model selection table
+
+```{r aicALSI}
+aicSel <- aicModel(ALSI)
+aicSel2 <- aicModel_indicators(ALSI)
+knitr::kable(aicSel)
+knitr::kable(aicSel2)
+```
+
+#### Subleagal index
+
+Correlation table
+
+```{r sublegal corrs}
+
+sub_leagal_cors %>%  
+  na.omit() %>% 
+  knitr::kable()
+```
+
+Scatter plot
+
+```{r xysublegal}
+xyPlot(sublegal_cpue)
+```
+
+AIC lm model selection table
+
+```{r aicsublegal}
+
+aicSel <- aicModel(sublegal_cpue)
+aicSel2 <- aicModel_indicators(sublegal_cpue)
+knitr::kable(aicSel)
+knitr::kable(aicSel2)
+```
+
+
+#### ME yearly landings
+
+Correlation table
+
+```{r landings corrs}
+
+ME_landings_cors %>%  
+  na.omit() %>% 
+  knitr::kable()
+```
+
+Scatter plot
+
+```{r}
+xyPlot(ME_pounds)
+```
+
+
+AIC lm model selection table
+
+```{r}
+aicSel <- aicModel(ME_pounds)
+aicSel2 <- aicModel_indicators(ME_pounds)
+knitr::kable(aicSel)
+knitr::kable(aicSel2)
+```
+
+
+#### ME Trawl index
+
+Correlation table
+
+```{r MEtrawl corrs}
+MEDMR_cors %>% 
+  na.omit() %>% 
+  knitr::kable()
+```
+
+Scatter plot
+
+```{r}
+xyPlot(MEDMR_cpue)
+```
+
+
+AIC lm model selection table
+
+```{r}
+aicSel <- aicModel(MEDMR_cpue)
+aicSel2 <- aicModel_indicators(MEDMR_cpue)
+knitr::kable(aicSel)
+knitr::kable(aicSel2)
+```
+
+
+#### NEFSC trawl index
+
+Correlation table
+
+```{r NefscTrawl corrs}
+
+NEFSC_cors %>% 
+  filter(name %in% c("NefscFQ2", "NefscFQ4", "NefscMQ2", "NefscMQ4")) %>% 
+  na.omit() %>% 
+  knitr::kable()
+```
+
+Scatter plot
+
+```{r}
+
+xyPlot(NEFSCindex)
+```
+
+
+AIC lm model selection table
+
+```{r}
+
+aicSel <- aicModel(NEFSCindex)
+aicSel2 <- aicModel_indicators(NEFSCindex)
+knitr::kable(aicSel)
+knitr::kable(aicSel2)
+```
+
+
+#### Cluster Analysis
+
+
+```{r cluster Analysis}
+
+GOMindex_ca <- MEDMR_cpue %>% 
+  filter(Season == "Spring") %>% 
+  select(Year, lob_index, name, stat_area)
+
+NEFSCindex_ca <- NEFSCindex %>% 
+  filter(Season == 2) %>% 
+  select(Year, lob_index, name)
+
+lobData <- bind_rows(ALSI, sublegal_cpue, ME_pounds, GOMindex_ca, NEFSCindex_ca) %>% 
+  pivot_wider(names_from = c(name, stat_area),
+              values_from = lob_index) %>% 
+  na.omit() %>% 
+  column_to_rownames("Year") 
+
+# standardize variables
+lobData <- scale(lobData) %>% 
+  data.frame()
+
+lobData_t <- data.table::transpose(lobData)
+
+# get row and colnames in order
+colnames(lobData_t) <- rownames(lobData)
+rownames(lobData_t) <- colnames(lobData)
+
+
+
+# determine number of clusters
+wss <- (nrow(lobData)-1)*sum(apply(lobData,2,var)) # get sum of squares
+
+for (i in 2:12) wss[i] <- sum(kmeans(lobData,
+   centers=i)$withinss)
+
+# look for break in plot like a scree plot
+breakplot <- plot(1:12, wss, type="b", xlab="Number of Clusters",
+  ylab="Within groups sum of squares")
+
+breakinfo <- fpc::pamk(lobData)
+
+# K-Means Cluster Analysis
+fit <- kmeans(lobData, 2) # 3 cluster solution
+# get cluster means
+cluster_means <- aggregate(lobData,by=list(fit$cluster),FUN=mean)
+# append cluster assignment
+lobData_cluster <- data.frame(lobData, fit$cluster)
+
+# Cluster Plot against 1st 2 principal components
+
+# vary parameters for most readable graph
+cluster::clusplot(lobData, fit$cluster, color=TRUE, shade=TRUE,
+   labels=2, lines=0)
+
+# Centroid Plot against 1st 2 discriminant functions
+centroidPlot <- fpc::plotcluster(lobData, fit$cluster)
+
+```
+
+
+### Variance{.tabset}
+
+Variance shows the spread in the data. We are using this stat to see if these indicators and the response variables are becoming more variable with time. 
+
+
+```{r variance}
+p0 <- yrFVCOM %>% 
+  ggplot() +
+  geom_line(aes(Year, bot_temp_var)) +
+  facet_wrap(~stat_area) +
+  labs(y = "Bottom temp variance")
+
+p1 <- yrFVCOM %>% 
+  ggplot() +
+  geom_line(aes(Year, sur_temp_var)) +
+  facet_wrap(~stat_area) +
+  labs(y = "SST variance (FVCOM)")
+
+p2 <- yrOISST %>% 
+  ggplot() +
+  geom_line(aes(Year, temp_var)) +
+  facet_wrap(~stat_area)  +
+  labs(y = "SST variance (OISST)")
+  
+
+p3 <- yrSal %>% 
+  ggplot() +
+  geom_line(aes(Year, bot_sal_var)) +
+  facet_wrap(~stat_area) +
+  labs(y = "Bottom salinity variance")
+
+p4 <- yrSal %>% 
+  ggplot() +
+  geom_line(aes(Year, sur_sal_var)) +
+  facet_wrap(~stat_area) +
+  labs(y = "SSS variance")
+
+p5 <- sublegal_vari %>% 
+  ggplot() +
+  geom_line(aes(Year, vari)) +
+  facet_wrap(~stat_area) +
+  labs("VTS variance")
+
+p6 <- MEDMR_vari %>% 
+  ggplot() +
+  geom_line(aes(Year, vari, col = Season)) +
+  facet_wrap(~stat_area) +
+  labs("ME-NH lob biomass var")
+
+p6_1 <- MEDMR_vari %>% 
+  mutate(vari = if_else(vari > 1000, 500, vari)) %>% 
+  ggplot() +
+  geom_line(aes(Year, vari, col = Season)) +
+  facet_wrap(~stat_area) +
+  labs("ME-NH lob biomass var")
+
+p7 <- NEFSC_meIndex %>% 
+  filter(Year >= 1980) %>% 
+  ggplot() +
+  geom_line(aes(Year, bio_var, col = season)) +
+  facet_wrap(~stat_area) +
+  labs("NEFSC lob biomass var")
+
+
+```
+
+
+#### Temperature
+
+```{r var plots1}
+p0 / p1 / p2
+```
+
+#### Salinity
+
+```{r var plots2}
+p3 / p4
+```
+
+#### Sublegal Lobsters
+
+```{r var plots5}
+p5
+```
+
+#### ME-NH trawl survey
+
+```{r var plots6}
+p6
+
+p6_1
+```
+
+#### Nefsc trawl survey
+
+```{r var plots7}
+p7
+```

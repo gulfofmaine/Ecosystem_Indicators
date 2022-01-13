@@ -1,0 +1,96 @@
+---
+title: "Lobster Data"
+author: "Matt Dzaugis"
+date: "11/2/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+```
+
+## Lobster Data
+
+The following lobster data sets are processed in this document:
+* American Lobster Settlement Index (ALSI)
+* Ventless Trap Survey data (size class 71-80mm)
+
+
+```{r cars}
+# Lobster Data
+landings_mon <- read_csv("Biological_data/monthly_zone_landings.csv")
+landings_yr <- read_csv("Biological_data/ME_lob_landings_1950_2019.csv")
+ASMFCindex <- read_csv("Biological_data/GOMGBK_indices.csv")
+ALSI <- read_csv("Biological_data/SettlementIndex.csv")
+sublegal <- readxl::read_excel("Biological_data/RawData.xlsx")
+```
+
+## ALSI
+
+```{r ALSI_process}
+
+statKey <- data.frame("Location" = c('Jonesport',
+'Mt. Desert Island',
+'Outer Pen Bay',
+'Mid-coast',
+'Casco Bay',
+'York',
+'New Hampshire'), "stat_area" = c(511,512,512,513,513,513,513))
+
+ALSI <- ALSI %>% 
+  left_join(statKey, by = "Location") %>% 
+  filter(!is.na(stat_area)) %>% 
+  group_by(stat_area, Year) %>% 
+  summarise(yoy_density = mean(Yoy_density), .groups = "drop") %>% 
+  na.omit()
+
+ALSI %>% 
+  ggplot() +
+  geom_line(aes(Year, yoy_density, col = as.factor(stat_area)))
+
+```
+
+
+## Sublegal Lobsters
+
+### Calculate stratified means
+
+* Calculate catch per unit effort for each site for each year
+* Multiply cpue by the depth strata area factor
+* Group by stat area, sum the outputs 
+
+
+```{r sublegal lobs}
+
+strata_area_factor <- tibble("stat area" = c(511,512,513),
+                                 "1" = c(0.412162162, 0.409847936, 0.370152761),
+                                 "2" = c(0.277027027, 0.28602462, 0.397179788),
+                                 "3" = c(0.310810811, 0.304127444, 0.23266745)) %>% 
+  pivot_longer(cols = c("1", "2", "3"), names_to = "depth stratum", values_to = "strata_scale") %>% 
+  mutate(`depth stratum` = as.numeric(`depth stratum`))
+
+sublegal_cpue <- sublegal %>% 
+  group_by(`trip ID`, `trip date`, year, month, `site ID`, 
+           `depth stratum`, `stat area`,
+           `soak nights`, depth, `depth unit`, 
+           `latitude (dd)`, `longitude (dd)`, `effort ID`) %>% 
+  mutate(lob_count = sum(`sample ID` != 0), 
+            lob_effort = lob_count/`soak nights`) %>% 
+  group_by(`trip ID`, `trip date`, year, month, 
+           `site ID`, `depth stratum`, `stat area`,
+           `soak nights`, depth, `depth unit`, 
+           `latitude (dd)`, `longitude (dd)`) %>% 
+  summarise(cpue = sum(lob_effort)/sum(!is.na(unique(`effort ID`))), .groups = "drop") %>% 
+  left_join(strata_area_factor, by = c("stat area", "depth stratum")) %>% 
+  mutate(stratified_cpue = cpue*strata_scale) %>% 
+  group_by(`stat area`, year) %>% 
+  summarise(stratified_cpue = sum(stratified_cpue), .groups = "drop")
+            
+sublegal_cpue %>% 
+  ggplot() +
+  geom_line(aes(year, stratified_cpue, col = as.factor(`stat area`)))
+
+```
+
+

@@ -1,0 +1,534 @@
+---
+title: "Developing lobster data time series"
+author: "Matt Dzaugis"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    toc: TRUE
+    toc_float:
+        collapsed: FALSE
+    code_folding: hide
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+library(tidyverse)
+library(patchwork)
+library(factoextra)
+library(gmRi)
+# Set theme  
+theme_set(theme_bw())
+```
+
+
+`r use_gmri_style_rmd(css_file = "gmri_rmarkdown.css")`
+
+## Developing lobster data time series
+
+### Lobster Data {.tabset}
+
+
+```{r biological_data}
+
+ALSI_data <- read_csv(here::here("Biological_data/SettlementIndex.csv"))
+ME_landings <- read_csv(here::here("Biological_data/ME_lob_landings_1950_2019.csv")) %>% 
+  add_column("stat_area" = "511-513")
+ASFMCindicies <- read_csv(here::here("Biological_data/GOMGBK_indices.csv")) %>% 
+  rename("lob_index" = Index, "name" = Survey)
+GOMindex <- ASFMCindicies %>% 
+  filter(name %in% c("MeFQ2", "MeMQ2", "MeFQ4", "MeMQ4")) %>% 
+  add_column("stat_area" = "511-513")
+NEFSCindex <- ASFMCindicies %>% 
+  filter(name %in% c("NefscFQ2", "NefscMQ2", "NefscFQ4", "NefscMQ4")) %>% 
+  add_column("stat_area" = "511-513")
+sublegal <- readxl::read_excel(here::here("Biological_data/RawData.xlsx")) %>% 
+  rename("Year" = year, "Month" = month, "stat_area" = `stat area`)
+MEDMR_trawl_survey <- read_csv(paste0(gmRi::box_path("Res_Data", "Maine_NH_Trawl"), "MaineDMR_Trawl_Survey_Catch_Data_2021-05-14.csv"))
+MEDMR_trawl <- MEDMR_trawl_survey %>% 
+  filter(Common_Name == "Lobster American")
+NEFSC_meIndex <- read_csv(here::here("Biological_data/nmfs_trawl_lobster_indices.csv")) %>% 
+  rename("Year" = est_year, "stat_area" = lobster_strata) %>% 
+  mutate(stat_area = as.factor(stat_area))
+
+bp_analysis <- function(x, npsi){
+  mod <-  lm(lob_index ~ Year, data = x)
+  o <- tryCatch(segmented::segmented(mod, seg.Z = ~Year, npsi = npsi),  # need to estimate bp
+                error = function(cond){cond})
+}
+
+```
+
+
+#### ALSI index
+
+Source: [American Lobster Settlement Index data portal](https://safis.accsp.org:8443/safis_prod/f?p=LSI:LOGIN)
+Sites:
+
+* Jonesport, Length: 2002-2018, stat area: 511
+* Mt. Desert Island, Length: 2000-2018, stat area: 512
+* Outer Penobscot Bay, Length: 2000-2018, stat area: 512
+* Mid-coast, Length: 1989-2018, stat area: 513
+* Casco Bay, Length: 2000-2018, stat area: 513
+* York, Length: 2000-2018, stat area: 513
+
+Methods:
+
+* Sites grouped by NOAA stat area
+* Time series cropped to shortest length
+* Averaged by stat area
+
+```{r ALSI_process}
+
+statKey <- data.frame("Location" = c('Jonesport',
+'Mt. Desert Island',
+'Outer Pen Bay',
+'Mid-coast',
+'Casco Bay',
+'York'), "stat_area" = c(511,512,512,513,513,513))
+
+ALSI_stat_area <- ALSI_data %>% 
+  left_join(statKey, by = "Location") %>% 
+  filter(!is.na(stat_area),
+         Year >= 2000) %>% 
+  group_by(stat_area, Year) %>% 
+  summarise(lob_index = mean(Yoy_density, na.rm=TRUE), .groups = "drop") %>% 
+  mutate(stat_area = as.factor(stat_area),
+         name = "ALSI") %>% 
+  na.omit()
+
+ALSIyr <- ALSI_stat_area  %>% 
+  group_by(Year, name) %>% 
+  summarise(lob_index = mean(lob_index, na.rm=TRUE)) %>% 
+  mutate(stat_area = "511-513")
+  
+ALSI <- bind_rows(ALSI_stat_area, ALSIyr)
+ALSI$stat_area <- factor(ALSI$stat_area, levels = c("511", "512", "513", "511-513"))
+
+ALSI$Season <- "all"
+
+ALSI_plot <- ALSI %>% 
+  ggplot() +
+  geom_line(aes(Year, lob_index, col = as.factor(stat_area))) +
+  scale_color_discrete(name = "Stat area") +
+  labs(y = "ALSI yoy density")
+
+ALSI_plot
+
+ALSI_bp <- ALSI %>% 
+  nest(data = -c(stat_area, name, Season)) %>% 
+  mutate(mod = map(data, ~bp_analysis(.x, npsi = 1)),
+         breakpoint1 = purrr::map(mod, ~.x$psi[[2]])) %>% 
+  select(stat_area, name, Season, breakpoint1) %>% 
+  unnest(breakpoint1)
+
+knitr::kable(ALSI_bp)
+```
+
+#### Sublegal index
+
+Source: Ventless trap survey
+
+Calculate stratified means
+
+* Calculate catch per unit effort for each site for each year
+* Multiply cpue by the depth strata area factor
+* Group by stat area, sum the outputs 
+
+
+```{r sublegal variance}
+
+strata_area <- tibble("stat_area" = c(511,512,513),
+                                 "1" = c(122, 566, 315),
+                                 "2" = c(82, 395, 338),
+                                 "3" = c(92, 420, 198)) %>% 
+  pivot_longer(cols = c("1", "2", "3"), names_to = "depth stratum", values_to = "strata_area") %>% 
+  group_by(stat_area) %>% 
+  mutate(`depth stratum` = as.numeric(`depth stratum`),
+         total = sum(strata_area)) 
+
+# average number of lobsters per trap haul at each site
+u <- sublegal  %>% 
+  group_by(Year, `site ID`, `effort ID`, stat_area, `depth stratum`) %>% 
+  summarise(n_lob = sum(`sample ID` != 0), .groups = "drop") %>% 
+  group_by(Year, `site ID`, stat_area, `depth stratum`) %>% 
+  summarise(n_lob_u = mean(n_lob), .groups = "drop")
+
+# average number of lobsters per trap haul at each depth stratum within a stat area
+v <- sublegal  %>% 
+  group_by(stat_area, `depth stratum`, Year, `site ID`, `effort ID`) %>% 
+  summarise(n_lob = sum(`sample ID` != 0), .groups = "drop") %>% 
+  group_by(stat_area, `depth stratum`, Year) %>% 
+  summarise(n_lob_v = mean(n_lob), .groups = "drop")
+
+# choose the relevant v which corresponds to the depth strata that u is in ("stat_area", "depth stratum", "Year"). Each site will have one w value
+w <- left_join(v, u, by = c("stat_area", "depth stratum", "Year")) %>% 
+  mutate(w = (n_lob_v-n_lob_u)^2)
+
+#sum of all w within the same depth strata in a stat area
+x <- w %>% 
+  group_by(`depth stratum`, stat_area, Year) %>% 
+  summarise(x = sum(w), .groups = "drop")
+
+#number of sites per depth stratum within a given stat area
+y <- sublegal %>% 
+  group_by(stat_area, `depth stratum`, Year) %>% 
+  summarise(site_ID = unique(`site ID`)) %>% 
+  summarise(y = n(), .groups = "drop")
+
+#if done correctly, each stat area per year should have three z values, one for each depth stratum
+z <- left_join(x, y, by = c("stat_area", "depth stratum", "Year")) %>% 
+  mutate(z = x/(y-1))
+
+# Calculate stat area variance 
+sublegal_vari <- left_join(z, strata_area, by = c("stat_area", "depth stratum")) %>% 
+  mutate(a = 1/(total^2),
+         b = strata_area*(strata_area-y)*(z/y)) %>% 
+  group_by(stat_area, Year, a) %>% 
+  summarise(stat_sum = sum(b), .groups = "drop") %>% 
+  mutate(vari = a*stat_sum,
+         sd = sqrt(vari))
+
+```
+
+
+```{r sublegal lobs}
+
+strata_area_factor <- tibble("stat_area" = c(511,512,513),
+                                 "1" = c(0.412162162, 0.409847936, 0.370152761),
+                                 "2" = c(0.277027027, 0.28602462, 0.397179788),
+                                 "3" = c(0.310810811, 0.304127444, 0.23266745)) %>% 
+  pivot_longer(cols = c("1", "2", "3"), names_to = "depth stratum", values_to = "strata_scale") %>% 
+  mutate(`depth stratum` = as.numeric(`depth stratum`))
+
+sublegal_cpue <- sublegal %>% 
+  group_by(`trip ID`, `trip date`, Year, Month, `site ID`, 
+           `depth stratum`, stat_area,
+           `soak nights`, depth, `depth unit`, 
+           `latitude (dd)`, `longitude (dd)`, `effort ID`) %>% 
+  mutate(lob_count = sum(`sample ID` != 0), 
+            lob_effort = lob_count/`soak nights`) %>% 
+  group_by(`trip ID`, `trip date`, Year, Month, 
+           `site ID`, `depth stratum`, stat_area,
+           `soak nights`, depth, `depth unit`, 
+           `latitude (dd)`, `longitude (dd)`) %>% 
+  summarise(cpue = sum(lob_effort)/sum(!is.na(unique(`effort ID`))), .groups = "drop") %>% 
+  left_join(strata_area_factor, by = c("stat_area", "depth stratum")) %>% 
+  mutate(stratified_cpue = cpue*strata_scale,
+         stat_area = as.factor(stat_area)) %>% 
+  group_by(stat_area, Year) %>% 
+  summarise(lob_index = sum(stratified_cpue), .groups = "drop") %>% 
+  mutate(name = "sublegal_cpue")
+
+sublegal_cpue_yr <- sublegal_cpue %>% 
+  group_by(Year, name) %>% 
+  summarise(lob_index = mean(lob_index, na.rm = TRUE)) %>% 
+  mutate(stat_area = "511-513")
+            
+sublegal_cpue <- bind_rows(sublegal_cpue, sublegal_cpue_yr)
+sublegal_cpue$stat_area <- factor(sublegal_cpue$stat_area, levels = c("511", "512", "513", "511-513"))
+
+sublegal_cpue$Season <- "all"
+
+sublegal_plot <- sublegal_cpue %>% 
+  ggplot() +
+  geom_line(aes(Year, lob_index, col = as.factor(stat_area))) +
+  scale_color_discrete(name = "Stat area") +
+  labs(y = "Sublegal lobster cpue")
+
+sublegal_var_plot <- sublegal_vari %>% 
+  ggplot() +
+  geom_line(aes(Year, vari, col = as.factor(stat_area))) +
+  scale_color_discrete(name = "Stat area") +
+  labs(y = "Sublegal lobster variance")
+
+sublegal_cpue_bp <- sublegal_cpue %>% 
+  nest(data = -c(stat_area, name, Season)) %>% 
+  mutate(mod = map(data, ~bp_analysis(.x, 1)),
+         breakpoint1 = purrr::map(mod, ~.x$psi[[2]])) %>% 
+  select(stat_area, name, breakpoint1) %>% 
+  unnest(breakpoint1)
+
+sublegal_plot
+
+knitr::kable(sublegal_cpue_bp)
+```
+
+
+#### ME-NH Trawl Survey
+
+Source: ME-NH Trawl Survey
+
+Calculate stratified means
+
+* Calculate catch per unit effort for each site for each year
+* Multiply cpue by the depth strata area factor
+* Group by stat area, sum the outputs 
+
+```{r ME trawl survey data}
+
+stat_area_trawl_key <- tibble("stat_area" = c(511, 512, 512, 513, 513),
+                              "Region" = c(5,4,3,2,1))
+
+DMR_strata_area <- tibble("Stratum" = c("1", "2", "3", "4"),
+                          "1" = c(253.27, 214.22, 227.35, 225.65),
+                          "2" = c(279.63, 191.23, 211.66, 263.49),
+                          "3" = c(259.62, 262.90, 280.03, 183.69),
+                          "4" = c(205.30, 206.12, 310.49, 170.72),
+                          "5" = c(138.54, 220.49, 365.04, 196.11)) %>% 
+  pivot_longer(cols = c("1", "2", "3", "4", "5"), names_to = "Region", values_to = "strata_area") %>% 
+  group_by(Region) %>% 
+  mutate(Stratum = as.numeric(Stratum),
+         total = sum(strata_area),
+         Region = as.numeric(Region)) %>% 
+  left_join(stat_area_trawl_key) %>% 
+  group_by(stat_area, Stratum) %>% 
+  summarise(strata_area = sum(strata_area),
+            total = sum(total))
+
+# average number of lobsters per tow 
+u <- MEDMR_trawl %>% 
+  left_join(stat_area_trawl_key) %>% 
+  group_by(Season, Year, Tow_Number, stat_area, Stratum) %>% 
+  summarise(n_lob_u = sum(Expanded_Weight_kg, na.rm = TRUE), .groups = "drop")
+
+# average number of lobsters per trap haul at each depth stratum within a stat area
+v <- MEDMR_trawl %>%
+  left_join(stat_area_trawl_key) %>%  
+  group_by(stat_area, Stratum, Year, Season) %>% 
+  summarise(n_lob_v = mean(Expanded_Weight_kg, na.rm = TRUE), .groups = "drop")
+
+# choose the relevant v which corresponds to the depth strata that u is in ("stat_area", "depth stratum", "Year"). Each site will have one w value
+w <- left_join(v, u, by = c("stat_area", "Stratum", "Year", "Season")) %>% 
+  mutate(w = (n_lob_v-n_lob_u)^2)
+
+#sum of all w within the same depth strata in a stat area
+x <- w %>% 
+  group_by(Stratum, stat_area, Year, Season) %>% 
+  summarise(x = sum(w), .groups = "drop")
+
+#number of sites per depth stratum within a given stat area
+y <- MEDMR_trawl %>%
+  left_join(stat_area_trawl_key) %>% 
+  group_by(stat_area, Stratum, Year, Season) %>% 
+  summarise(Tow_number = unique(Tow_Number, na.rm = TRUE)) %>% 
+  summarise(y = n(), .groups = "drop")
+
+#if done correctly, each stat area per year should have three z values, one for each depth stratum
+z <- left_join(x, y, by = c("stat_area", "Stratum", "Year", "Season")) %>% 
+  mutate(z = x/(y-1))
+
+# Calculate stat area variance 
+MEDMR_vari <- left_join(z, DMR_strata_area, by = c("stat_area", "Stratum")) %>% 
+  mutate(a = 1/(total^2),
+         b = strata_area*(strata_area-y)*(z/y)) %>% 
+  group_by(stat_area, Year, a, Season) %>% 
+  summarise(stat_sum = sum(b), .groups = "drop") %>% 
+  mutate(vari = a*stat_sum,
+         sd = sqrt(vari))
+
+medmr_vari_plot <- MEDMR_vari %>% 
+  ggplot() + 
+  geom_line(aes(Year, vari, col = as.factor(stat_area))) +
+  facet_wrap(~Season)
+```
+
+
+```{r MEDMR_trawl cpue}
+
+MEDMR_cpue <- MEDMR_trawl %>%
+  left_join(stat_area_trawl_key) %>%  
+  group_by(Year, Season, stat_area, Stratum)%>%
+  mutate(tows=n_distinct(Tow_Number))%>%
+  group_by(Year, Season, tows, stat_area, Stratum) %>%
+  summarise(weight = sum(Expanded_Weight_kg,na.rm=TRUE), 
+            catch=sum(Expanded_Catch,na.rm=TRUE))%>%
+  mutate(weight_tow = weight/tows, 
+         catch_tow = catch/tows) %>% 
+  left_join(DMR_strata_area) %>% 
+  mutate(stratified_wpue = weight_tow*(strata_area/total),
+         stratified_cpue = catch_tow*(strata_area/total)) %>% 
+  group_by(stat_area, Year, Season) %>% 
+  summarise(menh_abundance = sum(stratified_cpue), 
+            menh_biomass = sum(stratified_wpue),
+            .groups = "drop") %>% 
+  pivot_longer(cols = c(menh_abundance, menh_biomass), names_to = "name", values_to = "lob_index") %>% 
+  mutate(stat_area = as.factor(stat_area))
+
+MEDMR_cpue_yr <- MEDMR_cpue %>% 
+  group_by(Year, name) %>% 
+  summarise(lob_index = mean(lob_index, na.rm = TRUE)) %>% 
+  mutate(Season = "all",
+         stat_area = "511-513") %>% 
+  mutate(stat_area = as.factor(stat_area))
+
+MEDMR_cpue_season <- MEDMR_cpue %>% 
+  group_by(Year, stat_area, name) %>% 
+  summarise(lob_index = mean(lob_index, na.rm = TRUE)) %>% 
+  mutate(Season = "all") %>% 
+  mutate(stat_area = as.factor(stat_area))
+
+MEDMR_cpue_stat <- MEDMR_cpue %>% 
+  group_by(Year, Season, name) %>% 
+  summarise(lob_index = mean(lob_index, na.rm = TRUE)) %>% 
+  mutate(stat_area = "511-513") %>% 
+  mutate(stat_area = as.factor(stat_area))
+
+  
+MENH_lob_index <- bind_rows(MEDMR_cpue, MEDMR_cpue_yr, MEDMR_cpue_stat, MEDMR_cpue_season) %>% 
+  mutate(Season = tolower(Season))
+
+MENH_lob_index$stat_area <- factor(MENH_lob_index$stat_area, levels = c("511", "512", "513", "511-513"))
+
+MENH_lob_index %>% 
+  filter(name == "menh_biomass") %>% 
+  ggplot() +
+  geom_line(aes(Year, lob_index, col = as.factor(stat_area))) +
+  scale_color_discrete(name = "Stat area") +
+  labs(y = "ME-NH Trawl biomass") +
+  facet_wrap(~Season)
+
+MENH_lob_index %>% 
+  filter(name == "menh_abundance") %>% 
+  ggplot() +
+  geom_line(aes(Year, lob_index, col = as.factor(stat_area))) +
+  scale_color_discrete(name = "Stat area") +
+  labs(y = "ME-NH Trawl abundance") +
+  facet_wrap(~Season)
+
+MENH_lob_index_bp <- MENH_lob_index %>% 
+  nest(data = -c(stat_area, Season, name)) %>% 
+  mutate(mod = map(data, ~bp_analysis(.x, 1)),
+         breakpoint1 = purrr::map(mod, ~.x$psi[[2]])) %>% 
+  select(stat_area, name, Season, breakpoint1) %>% 
+  unnest(breakpoint1)
+
+knitr::kable(MENH_lob_index_bp)
+
+```
+
+
+#### ME yearly landings
+
+Yearly Maine lobster landings in pounds from 1950-2020.
+
+```{r yearly_landingd}
+
+ME_pounds <- ME_landings %>% 
+  mutate(name = "ME_landings",
+         Season = "all") %>% 
+  select(Year, "lob_index" = Pounds, name, stat_area, Season) 
+
+ME_pounds %>% 
+  ggplot() +
+  geom_line(aes(Year, lob_index)) +
+  labs(y = "Maine lobster landings (pounds)")
+
+ME_pounds_bp <- ME_pounds %>% 
+  nest(data = -c(stat_area, name, Season)) %>% 
+  mutate(mod = map(data, ~bp_analysis(.x, 2)),
+         breakpoint1 = purrr::map(mod, ~.x$psi[[1,2]]),
+         breakpoint2 = purrr::map(mod, ~.x$psi[[2,2]])) %>% 
+  select(stat_area, name, breakpoint1, breakpoint2) %>% 
+  unnest(c(breakpoint1, breakpoint2))
+
+ME_pounds_bp
+
+```
+
+
+#### Nefsc index
+
+ASFMC lobster abundance index based on the NE fisheries trawl survey. Time spans 1978-2018 and indices are split into seasons and sex.
+
+```{r Nefscindex}
+
+NEFSCindex <- NEFSCindex %>% 
+  mutate(Season = if_else(Season == 2, "spring", "fall"),
+         Season = as.factor(Season))
+
+NEFSCindex %>% 
+  ggplot() +
+  geom_line(aes(Year, lob_index)) +
+  facet_wrap(~name) +
+  labs(y = "Nefsc trawl lob abundance index")
+
+NEFSCindex_bp <- NEFSCindex %>% 
+  nest(data = -c(stat_area, name, Sex, Season)) %>% 
+  mutate(mod = map(data, ~bp_analysis(.x, 2)),
+         breakpoint1 = purrr::map(mod, ~.x$psi[[1,2]]),
+         breakpoint2 = purrr::map(mod, ~.x$psi[[2,2]])) %>% 
+  select(stat_area, Sex, name, breakpoint1, breakpoint2) %>% 
+  unnest(c(breakpoint1, breakpoint2))
+
+NEFSCindex_bp
+```
+
+
+#### NMFS stat area 511-513
+
+Lobster biomass and abundance for statistical areas 511-513
+
+```{r nmfs_trawl}
+
+NEFSC_meLobIndex <- NEFSC_meIndex %>% 
+  rename("nefsc_biomass" = `stratified biomass (kg)`,
+         "nefsc_abundance" = `stratified abundance`,
+         "Season" = season) %>% 
+  select(Year, Season, stat_area, nefsc_biomass, nefsc_abundance, `stratum area`) %>% 
+  mutate(Season = tolower(Season),
+         Season = if_else(Season == "both", "all", Season)) %>% 
+  pivot_longer(cols = c(nefsc_biomass, nefsc_abundance), names_to = "name", values_to = "lob_index")
+  
+
+NEFSC_meIndex_yr <- NEFSC_meLobIndex %>% 
+  mutate(total = sum(unique(`stratum area`))) %>% 
+  group_by(Year, Season, name) %>% 
+  summarise(lob_index = weighted.mean(lob_index, w = `stratum area`/total)) %>% 
+  mutate(stat_area = "511-513")
+
+NEFSC_lobIndex <- bind_rows(NEFSC_meLobIndex, NEFSC_meIndex_yr) %>% 
+  select(-`stratum area`)
+NEFSC_lobIndex$stat_area <- factor(NEFSC_lobIndex$stat_area, levels = c("511", "512", "513", "511-513"))
+
+
+NEFSC_lobIndex %>% 
+  filter(name == "nefsc_biomass") %>% 
+  ggplot() +
+  geom_line(aes(Year, lob_index, col = as.factor(stat_area))) +
+  scale_color_discrete(name = "Stat area") +
+  labs(y = "NEFSC Trawl biomass") +
+  facet_wrap(~Season)
+
+NEFSC_lobIndex %>% 
+  filter(name == "nefsc_abundance") %>% 
+  ggplot() +
+  geom_line(aes(Year, lob_index, col = as.factor(stat_area))) +
+  scale_color_discrete(name = "Stat area") +
+  labs(y = "NEFSC Trawl abundance") +
+  facet_wrap(~Season)
+
+NEFSC_lobIndex_bp <- NEFSC_lobIndex %>% 
+  nest(data = -c(stat_area, Season, name)) %>% 
+  mutate(mod = map(data, ~bp_analysis(.x, 2)),
+         breakpoint1 = purrr::map(mod, ~.x$psi[[1,2]]),
+         breakpoint2 = purrr::map(mod, ~.x$psi[[2,2]])) %>% 
+  select(stat_area, Season, name, breakpoint1, breakpoint2) %>% 
+  unnest(c(breakpoint1, breakpoint2))
+
+NEFSC_lobIndex_bp
+
+```
+
+
+```{r all_lob_data}
+all_lob_data <- bind_rows(NEFSC_lobIndex, NEFSCindex, ME_pounds, MENH_lob_index, sublegal_cpue, ALSI)
+
+write_csv(all_lob_data, here::here("Processed_Indicators/all_lob_data.csv"))
+
+lob_breakpoints <- bind_rows(NEFSC_lobIndex_bp, NEFSCindex_bp, ME_pounds_bp, MENH_lob_index_bp, sublegal_cpue_bp, ALSI_bp)
+
+write_csv(lob_breakpoints, here::here("Processed_Indicators/lob_breakpoints.csv"))
+```
+

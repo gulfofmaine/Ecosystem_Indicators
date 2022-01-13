@@ -1,0 +1,112 @@
+---
+title: "OISST Shapefile Extract"
+author: "Matt Dzaugis"
+date: "10/18/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+```
+
+## OISST daily means
+
+The code below extracts daily averaged sst from a shapefile or list of shapefiles. The OISST data used are located in ~RES_Data/OISST/oisst_mainstays/annual_observations.
+
+```{r monthly_mean_temp}
+
+nc_files <- list.files(gmRi::shared.path(group = "RES_Data", folder = "OISST/oisst_mainstays/annual_observations"), pattern = "*.nc", full.names = TRUE)
+nc_files <- list.files(gmRi::shared.path(group = "RES_Data", folder = "OISST/oisst_mainstays/annual_anomalies/1982to2011_climatology"), pattern = "*.nc", full.names = TRUE)
+
+NWatl <- c(250, 350, 20, 50)
+shp <- statarea
+
+OISST_extract <- function(nc_file, shp, ext, fun){
+  
+  # Open the NetCDF connection
+  nc <- raster::stack(nc_file)
+
+  shp <- sf::st_transform(shp, raster::crs(nc))
+  
+  e <- raster::extent(NWatl)
+  
+  nc <- raster::crop(nc, e)
+  
+  nc <- raster::rotate(nc)
+  
+  extracted_temp <- raster::extract(nc, shp, df = TRUE, cellnumber = TRUE)
+  
+  xy <- raster::xyFromCell(nc, cell = extracted_temp$cell)
+  
+  extracted_temp <- data.frame(lon=xy[,"x"], lat=xy[,"y"], extracted_temp)
+  
+  stat_areas <- data.frame(stat_area=shp$Id, ID=unique(extracted_temp$ID)) 
+  
+  extracted_temp <- left_join(extracted_temp, stat_areas, by = "ID") %>% 
+    select(-ID, -cell) %>% 
+    pivot_longer(cols = c(-stat_area, -lon, -lat), names_to = "Date", values_to = "temp") %>% 
+    mutate(Date = str_remove(Date, "X"),
+           Date = str_replace_all(Date, "\\.", "-"),
+           Date = as.Date(Date, format = ("%Y-%m-%d"))) %>% 
+    na.omit()
+}
+
+test <- OISST_extract(nc_file = nc_files[3], shp = statarea, ext = NWatl, fun = NULL)
+
+library(doParallel)
+doParallel::registerDoParallel(6)
+stat_area_temps_anoms <- foreach(i=1:length(nc_files), .combine = rbind, .errorhandling = "remove") %dopar% {
+    values <- OISST_extract(nc_file = nc_files[i], shp = statarea, ext = NWatl, fun = NULL)
+    values
+  }
+doParallel::stopImplicitCluster()
+
+write_csv(stat_area_temps_anoms, here::here("Indicators/OISST_stat_area_anoms.csv"))
+
+stat_area_temps_anoms <- list()
+for(i in 1:length(nc_files)){
+  stat_area_temps_anoms[[i]] <- OISST_extract(nc_file = nc_files[i], shp = statarea, ext = NWatl, fun = NULL)
+  print(paste(i, "of", length(nc_files)))
+}
+
+```
+
+
+```{r summary_stats}
+
+oisst_sums <- stat_area_temps %>% 
+  filter(Date>=as.Date("1982-01-01"),
+         Date<as.Date("2021-01-01")) %>% 
+  mutate(Year = lubridate::year(Date),
+         Mon = lubridate::month(Date)) %>% 
+  group_by(stat_area, Year, Mon) %>% 
+  summarise(std = sd(temp),
+            vari = var(temp),
+            temp = mean(temp), .groups = "drop") %>% 
+  group_by(stat_area, Year) %>% 
+  summarise(std = mean(vari),
+            vari = mean(vari),
+            temp = mean(temp),
+            .groups = "drop")
+
+oisst_sums_anoms <- stat_area_temps_anoms %>% 
+  filter(Date>=as.Date("1982-01-01"),
+         Date<as.Date("2021-01-01")) %>% 
+  mutate(Year = lubridate::year(Date)) %>% 
+  group_by(stat_area, Year) %>% 
+  summarise(std = sd(temp),
+            vari = var(temp),
+            temp = mean(temp), .groups = "drop")
+
+oisst_sums %>% 
+  ggplot() +
+  geom_line(aes(Year, vari, col = as.factor(stat_area)))
+
+oisst_sums_anoms %>% 
+  ggplot() +
+  geom_line(aes(Year, vari, col = as.factor(stat_area)))
+
+```
+
+
