@@ -229,9 +229,14 @@ kmeans_scree <- ggplot() +
 
 # K-Means Cluster Analysis
 fit <- allIndex %>% 
-  column_to_rownames(., var = "Year") %>% scale() %>% kmeans(3)
+  column_to_rownames(., var = "Year") %>% 
+  scale() %>% 
+  kmeans(3)
 
-fviz_cluster(object = fit, data = allIndex) + 
+fit_df <- allIndex %>% 
+  column_to_rownames(., var = "Year") 
+
+fviz_cluster(object = fit, data = fit_df) + 
   theme_bw() 
 
 ```
@@ -245,26 +250,99 @@ The breakpoint analysis estimates a change in the linear relationship in the dat
 
 ```{r breakpoint_pc1}
 # breapoint function
-bp_analysis <- function(x){
+bp_analysis <- function(x, Npsi){
   mod <-  lm(values ~ Year, data = x)
-  o <- tryCatch(segmented::segmented(mod, seg.Z = ~Year, npsi = 1),  # need to estimate bp
+  o <- tryCatch(segmented::segmented(mod, seg.Z = ~Year, npsi = Npsi),  # need to estimate bp
                 error = function(cond){cond})
 }
 
-set.seed(8)
+pscore_fun <- function(x, nbreak){
+  lm1 <- lm(values ~ Year, data = x)
+  pscore <- segmented::pscore.test(lm1, n.break = nbreak)
+  return(pscore)
+}
+
+davies_fun <- function(x){
+  lm1 <- lm(values ~ Year, data = x)
+  davies <- segmented::davies.test(lm1)
+  return(davies)
+}
+
+mean_bp_fun <- function(x, models){
+  temp_mcp1 <- mcp::mcp(models, data = x, par_x = "Year")
+  return(temp_mcp1)
+}
+
 # Breakpoint by stat area
-pc1_breakpoint <- index_pca %>%
+df <- index_pca %>%
   select(Year, PC1, PC2, PC3)  %>%
   pivot_longer(cols = c(PC1, PC2, PC3), 
                names_to = "Indicator", values_to = "values") %>% 
-  nest(data = c(-Indicator))%>% 
-  mutate(seg = purrr::map(data, ~bp_analysis(.x)),
-         bp = purrr::map(seg, ~data.frame(.x$psi))) %>% 
-  unnest(bp) %>% 
-  select(Indicator, Est., St.Err)
+  filter(Indicator == "PC1")
 
-knitr::kable(pc1_breakpoint)
+lm1 <- lm(values ~ Year, data = df)
+summary(lm1)
 
+pscore <- pscore_fun(df,2)
+pscore
+
+bp <- bp_analysis(df, 2)
+summary(bp)
+plot(bp)
+points(x = df$Year, y = df$values)
+
+mean_bp <- mean_bp_fun(df, list(values~1, 1~1, 1~1))
+mean_bp
+plot(mean_bp)
+
+```
+
+
+```{r pc2_bp}
+df <- index_pca %>%
+  select(Year, PC1, PC2, PC3)  %>%
+  pivot_longer(cols = c(PC1, PC2, PC3), 
+               names_to = "Indicator", values_to = "values")  %>% 
+  filter(Indicator == "PC2")
+
+lm1 <- lm(values ~ Year, data = df)
+summary(lm1)
+
+pscore <- pscore_fun(df, 1)
+pscore
+
+bp <- bp_analysis(df, 1)
+summary(bp)
+plot(bp)
+points(x = df$Year, y = df$values)
+
+mean_bp <- mean_bp_fun(df, list(values~1, 1~1, 1~1))
+mean_bp
+plot(mean_bp)
+```
+
+
+```{r pc3_bp}
+df <- index_pca %>%
+  select(Year, PC1, PC2, PC3)  %>%
+  pivot_longer(cols = c(PC1, PC2, PC3), 
+               names_to = "Indicator", values_to = "values")  %>% 
+  filter(Indicator == "PC3")
+
+lm1 <- lm(values ~ Year, data = df)
+summary(lm1)
+
+pscore <- pscore_fun(df, 1)
+pscore
+
+bp <- bp_analysis(df, 2)
+summary(bp)
+plot(bp)
+points(x = df$Year, y = df$values)
+
+mean_bp <- mean_bp_fun(df, list(values~1, 1~1))
+mean_bp
+plot(mean_bp)
 ```
 
 
@@ -315,8 +393,8 @@ stepwiseAIC <- function(lob_name){
   
   x %>% 
     left_join(index_pca) %>% 
-    select(Year, stat_area, lob_index, PC1, PC2, PC3, name, Sex) %>% 
-    group_by(stat_area, name, Sex) %>% 
+    select(Year, stat_area, lob_index, PC1, PC2, PC3, name, Sex, Season) %>% 
+    group_by(stat_area, name, Sex, Season) %>% 
     nest() %>% 
     mutate(data = map(data, ~na.omit(.x)),
            aic = purrr::map(data, ~MASS::stepAIC(object = lm(lob_index ~ PC1 + PC2 + PC3 + Year, data = .x), direction = "both", trace = 0)),
@@ -325,17 +403,17 @@ stepwiseAIC <- function(lob_name){
            model = paste(index[[1]][[2]], index[[1]][[1]], index[[1]][[3]])) %>% 
     select(stat_area, stp, model, name) %>% 
     unnest(c(stp, model)) %>% 
-    select(stat_area, name, Sex, r.squared, p.value, model)
+    select(name, stat_area, Sex, Season, r.squared, p.value, model)
 }
 
 
 aicModelGAM <- function(lob_name, k){
   
   breaks <- lob_breakpoints %>% 
-    filter(name == "ALSI")
+    filter(name == lob_name)
   
   df <- all_lob_data %>% 
-    filter(name == "ALSI")
+    filter(name == lob_name)
   
   df <- left_join(breaks, df, by = c("stat_area", "Season", "name", "Sex"))
     
@@ -343,37 +421,85 @@ aicModelGAM <- function(lob_name, k){
   
   df$breakpoint2[is.na(df$breakpoint2)] <- 3000
   
+  df$breakpoint3[is.na(df$breakpoint3)] <- 3000
+  
   df <- df %>% rowwise() %>% 
     mutate(Period1 = Year < breakpoint1,
            Period2 = Year %in% seq(from = round(breakpoint1), to = round(breakpoint2), 1),
-           Period3 = Year > breakpoint2) %>% 
+           Period3 = Year %in% seq(from = round(breakpoint2), to = round(breakpoint3), 1),
+           Period4 = Year > breakpoint3) %>% 
     mutate(Period = if_else(Period1, "one", 
-                            if_else(Period2, "two", "three"))) %>% 
-    select(-Period1, -Period2, -Period3)
+                            if_else(Period2, "two", 
+                                    if_else(Period3, "three", "four")))) %>% 
+    select(-Period1, -Period2, -Period3, -Period4)
   
-  df$Period <- factor(df$Period, levels = c("one", "two", "three"))
+  df$Period <- factor(df$Period, levels = c("one", "two", "three", "four"))
   
   gams <- df %>% 
     left_join(index_pca) %>% 
-    group_by(stat_area, name, Season, Sex, breakpoint1, breakpoint2) %>% 
+    group_by(stat_area, name, Season, Sex, breakpoint1, breakpoint2, breakpoint3) %>% 
     nest() %>% 
     mutate(data = map(data, ~na.omit(.x)),
-           gams = purrr::map(data, ~mgcv::gam(lob_index ~ PC1 + PC2 + PC3 + s(Year, by = Period, k=4),
+           gam1 = purrr::map(data, ~mgcv::gam(lob_index ~ s(Year, by = Period, k=4),
                                               data = .x, select = TRUE, method="REML")),
-           tidied = map(gams, ~broom::tidy(.x)),
-           notes = map(gams, ~broom::glance(.x)), 
-           coefs = map(gams, ~summary(.x)$p.coeff), 
-           pval = map(gams, ~summary(.x)$p.pv))
+           gam2 = purrr::map(data, ~mgcv::gam(lob_index ~ PC1 + s(Year, by = Period, k=4),
+                                              data = .x, select = TRUE, method="REML")),
+           gam3 = purrr::map(data, ~mgcv::gam(lob_index ~ PC1 + PC2 + s(Year, by = Period, k=4),
+                                              data = .x, select = TRUE, method="REML")),
+           gam4 = purrr::map(data, ~mgcv::gam(lob_index ~ PC1 + PC2 + PC3 + s(Year, by = Period, k=4),
+                                              data = .x, select = TRUE, method="REML")))
   return(gams)
 }
 
-gamInfo <- function(df, stat_area = "511-513", season = "all", sex = NA){
+
+
+aicModelGAM2 <- function(lob_name, k){
   
-  if(is.na(sex)){
-    df1 <- aicSelGAM %>% filter(stat_area == "511-513", Season == "all")   
-  } else {
-    df1 <- aicSelGAM %>% filter(stat_area == "511-513", Season == "all", Sex == sex)  
-  }
+  breaks <- lob_breakpoints %>% 
+    filter(name == lob_name)
+  
+  df <- all_lob_data %>% 
+    filter(name == lob_name)
+  
+  df <- left_join(breaks, df, by = c("stat_area", "Season", "name", "Sex"))
+    
+  df$breakpoint1[is.na(df$breakpoint1)] <- 3000
+  
+  df$breakpoint2[is.na(df$breakpoint2)] <- 3000
+  
+  df$breakpoint3[is.na(df$breakpoint3)] <- 3000
+  
+  df <- df %>% rowwise() %>% 
+    mutate(Period1 = Year < breakpoint1,
+           Period2 = Year %in% seq(from = round(breakpoint1), to = round(breakpoint2), 1),
+           Period3 = Year %in% seq(from = round(breakpoint2), to = round(breakpoint3), 1),
+           Period4 = Year > breakpoint3) %>% 
+    mutate(Period = if_else(Period1, "one", 
+                            if_else(Period2, "two", 
+                                    if_else(Period3, "three", "four")))) %>% 
+    select(-Period1, -Period2, -Period3, -Period4)
+  
+  df$Period <- factor(df$Period, levels = c("one", "two", "three", "four"))
+  
+  gams <- df %>% 
+    left_join(index_pca) %>% 
+    group_by(stat_area, name, Season, Sex, breakpoint1, breakpoint2, breakpoint3) %>% 
+    nest() %>% 
+    mutate(data = map(data, ~na.omit(.x)),
+           gam1 = purrr::map(data, ~mgcv::gam(lob_index ~ s(Year, bs="re", k=4),
+                                              data = .x, method="REML")),
+           gam2 = purrr::map(data, ~mgcv::gam(lob_index ~ s(PC1, by = Period, k=4) + 
+                                                s(Year, bs="re", k=4),
+                                              data = .x, method="REML")),
+           gam3 = purrr::map(data, ~mgcv::gam(lob_index ~ s(PC1, by = Period, k=4) + 
+                                                s(PC2, by = Period, k=4) + 
+                                                s(Year, bs="re", k=4),
+                                              data = .x, method="REML")))
+  return(gams)
+}
+
+
+gamInfo <- function(df, stat_area = "511-513", season = "all", sex = "M+F"){
 
   summary(df1$gams[[1]])
 }
@@ -422,7 +548,14 @@ AIC lm model selection table
 ```{r aicALSI}
 stepwiseAIC("ALSI")
 aicSelGAM <- aicModelGAM("ALSI", 4)
-gamInfo(df = aicSelGAM, stat_area = "511-513", season = "all", sex = NA)
+AIC(aicSelGAM$gam1[[1]], aicSelGAM$gam2[[1]],aicSelGAM$gam3[[1]],aicSelGAM$gam4[[1]])
+
+summary(aicSelGAM$gam1[[1]])
+
+
+aicSelGAM <- aicModelGAM2("ALSI", 4)
+AIC(aicSelGAM$gam1[[1]], aicSelGAM$gam2[[1]],aicSelGAM$gam3[[1]])
+summary(aicSelGAM$gam3[[1]])
 ```
 
 #### Subleagal index
@@ -445,7 +578,13 @@ AIC lm model selection table
 ```{r aicsublegal}
 stepwiseAIC("sublegal_cpue")
 aicSelGAM <- aicModelGAM("sublegal_cpue", 4)
-gamInfo(df = aicSelGAM, stat_area = "511-513", season = "all", sex = NA)
+AIC(aicSelGAM$gam1[[1]], aicSelGAM$gam2[[1]],aicSelGAM$gam3[[1]],aicSelGAM$gam4[[1]])
+
+summary(aicSelGAM$gam4[[1]])
+
+aicSelGAM <- aicModelGAM2("sublegal_cpue", 4)
+AIC(aicSelGAM$gam1[[1]], aicSelGAM$gam2[[1]],aicSelGAM$gam3[[1]])
+summary(aicSelGAM$gam1[[1]])
 ```
 
 
@@ -469,8 +608,13 @@ AIC lm model selection table
 
 ```{r}
 stepwiseAIC("ME_landings")
-aicSelGAM <- aicModelGAM("ME_pounds", 5)
-gamInfo(df = aicSelGAM, stat_area = "511-513", season = "all", sex = NA)
+aicSelGAM <- aicModelGAM("ME_landings", 4)
+AIC(aicSelGAM$gam1[[1]], aicSelGAM$gam2[[1]],aicSelGAM$gam3[[1]],aicSelGAM$gam4[[1]])
+summary(aicSelGAM$gam4[[1]])
+
+aicSelGAM <- aicModelGAM2("ME_landings", 4)
+AIC(aicSelGAM$gam1[[1]], aicSelGAM$gam2[[1]],aicSelGAM$gam3[[1]])
+summary(aicSelGAM$gam2[[1]])
 ```
 
 
@@ -500,9 +644,21 @@ AIC lm model selection table
 stepwiseAIC("menh_biomass")
 stepwiseAIC("menh_abundance")
 aicSelGAM <- aicModelGAM("menh_biomass", 5)
-gamInfo(df = aicSelGAM, stat_area = "511-513", season = "all", sex = NA)
+AIC(aicSelGAM$gam1[[1]], aicSelGAM$gam2[[1]],aicSelGAM$gam3[[1]],aicSelGAM$gam4[[1]])
+summary(aicSelGAM$gam1[[1]])
+
+aicSelGAM <- aicModelGAM2("menh_biomass", 4)
+AIC(aicSelGAM$gam1[[1]], aicSelGAM$gam2[[1]],aicSelGAM$gam3[[1]])
+summary(aicSelGAM$gam2[[1]])
+
+
 aicSelGAM <- aicModelGAM("menh_abundance", 5)
-gamInfo(df = aicSelGAM, stat_area = "511-513", season = "all", sex = NA)
+AIC(aicSelGAM$gam1[[1]], aicSelGAM$gam2[[1]],aicSelGAM$gam3[[1]],aicSelGAM$gam4[[1]])
+summary(aicSelGAM$gam1[[1]])
+
+aicSelGAM <- aicModelGAM2("menh_abundance", 4)
+AIC(aicSelGAM$gam1[[1]], aicSelGAM$gam2[[1]],aicSelGAM$gam3[[1]])
+summary(aicSelGAM$gam2[[1]])
 ```
 
 
@@ -531,19 +687,88 @@ AIC lm model selection table
 ```{r}
 stepwiseAIC("nefsc_biomass")
 stepwiseAIC("nefsc_abundance")
-aicSelGAM <- aicModelGAM("nefsc_biomass", 5)
-gamInfo(df = aicSelGAM, stat_area = "511-513", season = "all", sex = NA)
+aicSelGAM <- aicModelGAM("nefsc_biomass", 4)
+AIC(aicSelGAM$gam1[[1]], aicSelGAM$gam2[[1]],aicSelGAM$gam3[[1]],aicSelGAM$gam4[[1]])
+summary(aicSelGAM$gam1[[1]])
+
+aicSelGAM <- aicModelGAM2("nefsc_biomass", 4)
+AIC(aicSelGAM$gam1[[1]], aicSelGAM$gam2[[1]],aicSelGAM$gam3[[1]])
+summary(aicSelGAM$gam3[[1]])
+
 aicSelGAM <- aicModelGAM("nefsc_abundance", 5)
-gamInfo(df = aicSelGAM, stat_area = "511-513", season = "all", sex = NA)
+AIC(aicSelGAM$gam1[[1]], aicSelGAM$gam2[[1]],aicSelGAM$gam3[[1]],aicSelGAM$gam4[[1]])
+summary(aicSelGAM$gam4[[1]])
+
+aicSelGAM <- aicModelGAM2("nefsc_abundance", 4)
+AIC(aicSelGAM$gam1[[1]], aicSelGAM$gam2[[1]],aicSelGAM$gam3[[1]])
+summary(aicSelGAM$gam3[[1]])
 ```
+
+
+#### NEFSC index
+
+Correlation table
+
+```{r ALSI corrs}
+cor_fun("NEFSCindex") %>% 
+  knitr::kable()
+```
+
+Scatter plot
+
+```{r xyALSI plot}
+xyPlot("NEFSCindex")
+```
+
+AIC lm model selection table
+
+```{r aicALSI}
+stepwiseAIC("NEFSCindex")
+aicSelGAM <- aicModelGAM("NEFSCindex", 4)
+AIC(aicSelGAM$gam1[[1]], aicSelGAM$gam2[[1]],aicSelGAM$gam3[[1]],aicSelGAM$gam4[[1]])
+summary(aicSelGAM$gam2[[1]])
+
+aicSelGAM <- aicModelGAM2("NEFSCindex", 4)
+AIC(aicSelGAM$gam1[[1]], aicSelGAM$gam2[[1]],aicSelGAM$gam3[[1]])
+summary(aicSelGAM$gam3[[1]])
+```
+
+
+#### NEFSC index
+
+Correlation table
+
+```{r ALSI corrs}
+cor_fun("MEindex") %>% 
+  knitr::kable()
+```
+
+Scatter plot
+
+```{r xyALSI plot}
+xyPlot("MEindex")
+```
+
+AIC lm model selection table
+
+```{r aicALSI}
+stepwiseAIC("MEindex")
+aicSelGAM <- aicModelGAM("MEindex", 4)
+AIC(aicSelGAM$gam1[[1]], aicSelGAM$gam2[[1]],aicSelGAM$gam3[[1]],aicSelGAM$gam4[[1]])
+summary(aicSelGAM$gam1[[1]])
+
+aicSelGAM <- aicModelGAM2("MEindex", 4)
+AIC(aicSelGAM$gam1[[1]], aicSelGAM$gam2[[1]])
+summary(aicSelGAM$gam1[[1]])
+```
+
 
 
 #### Cluster Analysis
 
 
 ```{r cluster Analysis}
-lobData <- all_lob_data %>% 
-  filter(!name %in% c("NefscFQ2", "NefscFQ4", "NefscMQ2", "NefscMQ4")) %>% 
+lobData <- all_lob_data %>%  
   pivot_wider(names_from = name, values_from = lob_index)
 
 allIndex_scaled <- lobData %>%

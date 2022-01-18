@@ -1,0 +1,420 @@
+---
+title: "Lobster Data Analysis"
+author: "Matt Dzaugis"
+date: "1/14/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(patchwork)
+library(factoextra)
+library(gmRi)
+# Set theme  
+theme_set(theme_bw())
+```
+
+
+```{r read_data}
+all_lob_data <- read_csv(here::here("Processed_Indicators/all_lob_data.csv"))
+```
+
+
+```{r functions}
+
+bp_analysis <- function(x, npsi){
+  mod <-  lm(lob_index ~ Year, data = x)
+  o <- tryCatch(segmented::segmented(mod, seg.Z = ~Year, npsi = npsi),  # need to estimate bp
+                error = function(cond){cond})
+}
+
+pscore_fun <- function(x, Name, season, stat_areas, sex = "M+F", nbreak){
+  df <- x %>% 
+    filter(name == Name,
+           Season == season,
+           stat_area == stat_areas,
+           Sex == sex)
+  
+  lm1 <- lm(lob_index ~ Year, data = df)
+  pscore <- segmented::pscore.test(lm1, n.break = nbreak)
+  return(pscore)
+}
+
+davies_fun <- function(x, Name, season, stat_areas, sex = "M+F"){
+  df <- x %>% 
+    filter(name == Name,
+           Season == season,
+           stat_area == stat_areas,
+           Sex == sex)
+  
+  lm1 <- lm(lob_index ~ Year, data = df)
+  davies <- segmented::davies.test(lm1)
+  return(davies)
+}
+
+slope_bp_fun <- function(x, Name, season, stat_areas, sex = "M+F", Npsi){
+    df <- x %>% 
+    filter(name == Name,
+           Season == season,
+           stat_area == stat_areas,
+           Sex == sex)
+  
+  lm1 <- lm(lob_index ~ Year, data = df)
+  
+  segmented::segmented(lm1, seg.Z = ~Year, npsi = Npsi)
+}
+
+mean_bp_fun <- function(x, Name, season, stat_areas, sex = "M+F", models){
+    df <- x %>% 
+    filter(name == Name,
+           Season == season,
+           stat_area == stat_areas,
+           Sex == sex)
+  
+  temp_mcp1 <- mcp::mcp(models, data = df, par_x = "Year")
+  return(temp_mcp1)
+}
+
+ggsparkline <- function(x, Name, season = "all", stat_areas = "511-513", sex = "M+F"){
+  x %>% 
+    filter(name == Name,
+           Season == season,
+           stat_area == stat_areas,
+           Sex == sex) %>% 
+    ggplot() + 
+    geom_line(aes(Year, lob_index), size = .1) +
+    scale_x_continuous(limits = c(1970, 2020)) +
+    theme(panel.background = element_blank(),
+          panel.grid = element_blank(),
+          axis.line = element_blank(),
+          text = element_blank(),
+          axis.ticks = element_blank(),
+          panel.border = element_blank())
+}
+```
+
+
+```{r lms}
+all_names <- unique(all_lob_data$name)
+
+lms <- all_lob_data %>% 
+  filter(Season == "all", stat_area == "511-513", Sex == "M+F") %>% 
+  group_by(name) %>% 
+  nest() %>% 
+  mutate(mod = map(data, ~lm(lob_index ~ Year, data = .x)),
+         coefs = map(mod, ~broom::tidy(.x) %>% filter(term == "Year") %>% 
+                       select(estimate, p.value)),
+         rsq = map(mod, ~broom::glance(.x) %>% 
+                     select(r.squared))) %>% 
+  select(-data, -mod) %>% 
+  unnest(cols = c(coefs, rsq))
+```
+
+
+```{r NEFSC_trawl_abun}
+ggsparkline(all_lob_data, Name = "nefsc_abundance")
+ggsave(here::here("Plots/nefsc_abundance_sparkline.png"), width = 1, height = 1, units = "cm")
+
+df <- all_lob_data %>% 
+  filter(name == "nefsc_abundance",
+         Season == "all",
+         stat_area == "511-513",
+         Sex == "M+F")
+
+max_breaks <- round(length(df$Year)/25)
+
+pscore <- pscore_fun(all_lob_data, "nefsc_abundance", "all", "511-513", sex = "M+F", nbreak = 2)
+bp <- slope_bp_fun(all_lob_data, "nefsc_abundance", "all", "511-513", sex = "M+F", Npsi = max_breaks)
+
+summary(bp)
+plot(bp) 
+points(x = df$Year, y = df$lob_index)
+
+
+mean_cp <- mean_bp_fun(all_lob_data, "nefsc_abundance", "all", "511-513", sex = "M+F", models = list(lob_index~1, 1~1))
+summary(mean_cp)
+plot(mean_cp)
+
+nefsc_abundance_bp <- df %>% 
+  nest(data = -c(stat_area, name, Sex, Season)) %>% 
+  mutate(mod = map(data, ~bp_analysis(.x, 2)),
+         breakpoint1 = purrr::map(mod, ~.x$psi[[1,2]]),
+         breakpoint2 = purrr::map(mod, ~.x$psi[[2,2]])) %>% 
+  select(name, stat_area, Season, Sex, breakpoint1, breakpoint2) %>% 
+  unnest(c(breakpoint1, breakpoint2))
+```
+
+
+
+```{r NEFSC_trawl_bio}
+ggsparkline(all_lob_data, Name = "nefsc_biomass")
+ggsave(here::here("Plots/nefsc_bio_sparkline.png"), width = 1, height = 1, units = "cm")
+
+df <- all_lob_data %>% 
+  filter(name == "nefsc_biomass",
+         Season == "all",
+         stat_area == "511-513",
+         Sex == "M+F")
+max_breaks <- round(length(df$Year)/25)
+
+pscore <- pscore_fun(all_lob_data, "nefsc_biomass", "all", "511-513", sex = "M+F", nbreak = 2)
+bp <- slope_bp_fun(all_lob_data, "nefsc_biomass", "all", "511-513", sex = "M+F", Npsi = max_breaks)
+
+summary(bp)
+plot(bp) 
+points(x = df$Year, y = df$lob_index)
+
+mean_cp <- mean_bp_fun(all_lob_data, "nefsc_biomass", "all", "511-513", sex = "M+F", models = list(lob_index~1, 1~1, 1~1))
+summary(mean_cp)
+plot(mean_cp)
+
+nefsc_biomass_bp <- df %>% 
+  nest(data = -c(stat_area, name, Sex, Season)) %>% 
+  mutate(mod = map(data, ~bp_analysis(.x, 2)),
+         breakpoint1 = purrr::map(mod, ~.x$psi[[1,2]]),
+         breakpoint2 = purrr::map(mod, ~.x$psi[[2,2]])) %>% 
+  select(name, stat_area, Season, Sex, breakpoint1, breakpoint2) %>% 
+  unnest(c(breakpoint1, breakpoint2))
+```
+
+
+```{r NEFSCindex}
+ggsparkline(all_lob_data, Name = "NEFSCindex")
+ggsave(here::here("Plots/NEFSCindex_sparkline.png"), width = 1, height = 1, units = "cm")
+
+df <- all_lob_data %>% 
+  filter(name == "NEFSCindex",
+         Season == "all",
+         stat_area == "511-513",
+         Sex == "M+F")
+max_breaks <- round(length(df$Year)/25)
+
+pscore <- pscore_fun(all_lob_data, "NEFSCindex", "all", "511-513", sex = "M+F", nbreak = 2)
+bp <- slope_bp_fun(all_lob_data, "NEFSCindex", "all", "511-513", sex = "M+F", Npsi = 2)
+
+summary(bp)
+plot(bp) 
+points(x = df$Year, y = df$lob_index)
+
+
+mean_cp <- mean_bp_fun(all_lob_data, "NEFSCindex", "all", "511-513", sex = "M+F", models = list(lob_index~1, 1~1, 1~1))
+summary(mean_cp)
+plot(mean_cp)
+
+NEFSCindex_bp <- df %>% 
+  nest(data = -c(stat_area, name, Sex, Season)) %>% 
+  mutate(mod = map(data, ~bp_analysis(.x, 2)),
+         breakpoint1 = purrr::map(mod, ~.x$psi[[1,2]]),
+         breakpoint2 = purrr::map(mod, ~.x$psi[[2,2]])) %>% 
+  select(name, stat_area, Season, Sex, breakpoint1, breakpoint2) %>% 
+  unnest(c(breakpoint1, breakpoint2))
+```
+
+
+```{r MENHindex}
+ggsparkline(all_lob_data, Name = "MEindex")
+ggsave(here::here("Plots/MEindex_sparkline.png"), width = 1, height = 1, units = "cm")
+
+df <- all_lob_data %>% 
+  filter(name == "MEindex",
+         Season == "all",
+         stat_area == "511-513",
+         Sex == "M+F")
+max_breaks <- round(length(df$Year)/25)
+
+pscore <- pscore_fun(all_lob_data, "MEindex", "all", "511-513", sex = "M+F", nbreak = 2)
+bp <- slope_bp_fun(all_lob_data, "MEindex", "all", "511-513", sex = "M+F", Npsi =2)
+summary(bp)
+plot(bp) 
+points(x = df$Year, y = df$lob_index)
+
+
+mean_cp <- mean_bp_fun(all_lob_data, "MEindex", "all", "511-513", sex = "M+F", models = list(lob_index~1, 1~1))
+summary(mean_cp)
+plot(mean_cp)
+
+MEindex_bp <- df %>% 
+  nest(data = -c(stat_area, name, Sex, Season)) %>% 
+  mutate(mod = map(data, ~bp_analysis(.x, 2)),
+         breakpoint1 = purrr::map(mod, ~.x$psi[[1,2]]),
+         breakpoint2 = purrr::map(mod, ~.x$psi[[2,2]])) %>% 
+  select(name, stat_area, Season, Sex, breakpoint1, breakpoint2) %>% 
+  unnest(c(breakpoint1, breakpoint2))
+```
+
+
+```{r yearly_landings}
+ggsparkline(all_lob_data, Name = "ME_landings")
+ggsave(here::here("Plots/ME_landings_sparkline.png"), width = 1, height = 1, units = "cm")
+
+df <- all_lob_data %>% 
+  filter(name == "ME_landings",
+         Season == "all",
+         stat_area == "511-513",
+         Sex == "M+F")
+max_breaks <- round(length(df$Year)/25)
+
+pscore <- pscore_fun(all_lob_data, "ME_landings", "all", "511-513", sex = "M+F", nbreak = 2)
+bp <- slope_bp_fun(all_lob_data, "ME_landings", "all", "511-513", sex = "M+F", Npsi = 3)
+
+summary(bp)
+plot(bp) 
+points(x = df$Year, y = df$lob_index)
+
+
+mean_cp <- mean_bp_fun(all_lob_data, "ME_landings", "all", "511-513", sex = "M+F", models = list(lob_index~1, 1~1, 1~1))
+summary(mean_cp)
+plot(mean_cp)
+
+ME_landings_bp <- df %>% 
+  nest(data = -c(stat_area, name, Sex, Season)) %>% 
+  mutate(mod = map(data, ~bp_analysis(.x, 3)),
+         breakpoint1 = purrr::map(mod, ~.x$psi[[1,2]]),
+         breakpoint2 = purrr::map(mod, ~.x$psi[[2,2]]),
+         breakpoint3 = purrr::map(mod, ~.x$psi[[3,2]])) %>% 
+  select(name, stat_area, Season, Sex, breakpoint1, breakpoint2, breakpoint3) %>% 
+  unnest(c(breakpoint1, breakpoint2, breakpoint3))
+```
+
+
+```{r MENH_trawl_abun}
+ggsparkline(all_lob_data, Name = "menh_abunance")
+ggsave(here::here("Plots/menh_abunance_sparkline.png"), width = 1, height = 1, units = "cm")
+
+df <- all_lob_data %>% 
+  filter(name == "menh_abundance",
+         Season == "all",
+         stat_area == "511-513",
+         Sex == "M+F")
+max_breaks <- round(length(df$Year)/25)
+
+pscore <- pscore_fun(all_lob_data, "menh_abundance", "all", "511-513", sex = "M+F", nbreak = 2)
+bp <- slope_bp_fun(all_lob_data, "menh_abundance", "all", "511-513", sex = "M+F", Npsi = 2)
+
+summary(bp)
+plot(bp) 
+points(x = df$Year, y = df$lob_index)
+
+
+mean_cp <- mean_bp_fun(all_lob_data, "menh_abundance", "all", "511-513", sex = "M+F", models = list(lob_index~1, 1~1))
+summary(mean_cp)
+plot(mean_cp)
+
+menh_abundance_bp <- df %>% 
+  nest(data = -c(stat_area, name, Sex, Season)) %>% 
+  mutate(mod = map(data, ~bp_analysis(.x, 2)),
+         breakpoint1 = purrr::map(mod, ~.x$psi[[1,2]]),
+         breakpoint2 = purrr::map(mod, ~.x$psi[[2,2]])) %>% 
+  select(name, stat_area, Season, Sex, breakpoint1, breakpoint2) %>% 
+  unnest(c(breakpoint1, breakpoint2))
+```
+
+
+```{r MENH_trawl_bio}
+ggsparkline(all_lob_data, Name = "menh_biomass")
+ggsave(here::here("Plots/menh_biomass_sparkline.png"), width = 1, height = 1, units = "cm")
+
+df <- all_lob_data %>% 
+  filter(name == "menh_biomass",
+         Season == "all",
+         stat_area == "511-513",
+         Sex == "M+F")
+max_breaks <- round(length(df$Year)/25)
+
+pscore <- pscore_fun(all_lob_data, "menh_biomass", "all", "511-513", sex = "M+F", nbreak = 2)
+bp <- slope_bp_fun(all_lob_data, "menh_biomass", "all", "511-513", sex = "M+F", Npsi = 2)
+
+summary(bp)
+plot(bp) 
+points(x = df$Year, y = df$lob_index)
+
+
+mean_cp <- mean_bp_fun(all_lob_data, "menh_biomass", "all", "511-513", sex = "M+F", models = list(lob_index~1, 1~1))
+summary(mean_cp)
+plot(mean_cp)
+
+menh_biomass_bp <- df %>% 
+  nest(data = -c(stat_area, name, Sex, Season)) %>% 
+  mutate(mod = map(data, ~bp_analysis(.x, 2)),
+         breakpoint1 = purrr::map(mod, ~.x$psi[[1,2]]),
+         breakpoint2 = purrr::map(mod, ~.x$psi[[2,2]])) %>% 
+  select(name, stat_area, Season, Sex, breakpoint1, breakpoint2) %>% 
+  unnest(c(breakpoint1, breakpoint2))
+```
+
+
+```{r sublegal_data}
+ggsparkline(all_lob_data, Name = "sublegal_cpue")
+ggsave(here::here("Plots/sublegal_cpue_sparkline.png"), width = 1, height = 1, units = "cm")
+
+df <- all_lob_data %>% 
+  filter(name == "sublegal_cpue",
+         Season == "all",
+         stat_area == "511-513",
+         Sex == "M+F")
+max_breaks <- round(length(df$Year)/25)
+
+### No significant pscore
+pscore <- pscore_fun(all_lob_data, "sublegal_cpue", "all", "511-513", sex = "M+F", nbreak = 1)
+bp <- slope_bp_fun(all_lob_data, "sublegal_cpue", "all", "511-513", sex = "M+F", Npsi = max_breaks)
+
+summary(bp)
+plot(bp) 
+points(x = df$Year, y = df$lob_index)
+
+
+mean_cp <- mean_bp_fun(all_lob_data, "sublegal_cpue", "all", "511-513", sex = "M+F", models = list(lob_index~1, 1~1))
+summary(mean_cp)
+plot(mean_cp)
+
+
+sublegal_cpue_bp <- df %>% 
+  select(name, stat_area, Season, Sex) %>% 
+  unique() %>% 
+  mutate(breakpoint1 = NA)
+```
+
+
+```{r ALSI_data}
+ggsparkline(all_lob_data, Name = "ALSI")
+ggsave(here::here("Plots/ALSI_sparkline.png"), width = 1, height = 1, units = "cm")
+
+
+df <- all_lob_data %>% 
+  filter(name == "ALSI",
+         Season == "all",
+         stat_area == "511-513",
+         Sex == "M+F")
+max_breaks <- round(length(df$Year)/25)
+
+pscore <- pscore_fun(all_lob_data, "ALSI", "all", "511-513", sex = "M+F", nbreak = 1)
+
+
+bp <- slope_bp_fun(all_lob_data, "ALSI", "all", "511-513", sex = "M+F", Npsi = 1)
+summary(bp)
+plot(bp) 
+points(x = df$Year, y = df$lob_index)
+
+
+mean_cp <- mean_bp_fun(all_lob_data, "ALSI", "all", "511-513", sex = "M+F", models = list(lob_index~1, 1~1))
+summary(mean_cp)
+plot(mean_cp)
+
+ALSI_bp <- df %>% 
+  nest(data = -c(stat_area, name, Sex, Season)) %>% 
+  mutate(mod = map(data, ~bp_analysis(.x, 1)),
+         breakpoint1 = purrr::map(mod, ~.x$psi[[1,2]])) %>% 
+  select(name, stat_area, Season, Sex, breakpoint1) %>% 
+  unnest(c(breakpoint1))
+```
+
+
+
+```{r bind_bp}
+lob_breakpoints <- bind_rows(nefsc_biomass_bp, nefsc_abundance_bp, NEFSCindex_bp, MEindex_bp, ME_landings_bp, menh_abundance_bp, menh_biomass_bp, sublegal_cpue_bp, ALSI_bp)
+
+write_csv(lob_breakpoints, here::here("Processed_Indicators/lob_breakpoints.csv"))
+```
+
+

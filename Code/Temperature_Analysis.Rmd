@@ -62,14 +62,14 @@ acf_plot <- function(indicator, season, stat_areas){
   acf(df)
 }
 
-pscore_fun <- function(indicator, season, stat_areas){
+pscore_fun <- function(indicator, season, stat_areas, nbreak){
   df <- allIndicators %>% 
     filter(Indicator == indicator,
            Season == season,
            stat_area == stat_areas)
   
   lm1 <- lm(Value ~ Year, data = df)
-  pscore <- segmented::pscore.test(lm1)
+  pscore <- segmented::pscore.test(lm1, n.break = nbreak)
   return(pscore)
 }
 
@@ -144,7 +144,7 @@ acf_plot("oisst", "all", "511-513")
 The pscore test and davies tests indicate whether a breakpoint in the slope exists. The davies test is more sensitive to data that follow a more sinusoidal curve but less sensitive to linear changes. A significant p-value indicates there is a breakpoint in the data. A non-significant p-value indicates a breakpoint is not present.
 
 ```{r breakpoint_tests}
-pscore_fun("oisst", "all", "511-513")
+pscore_fun("oisst", "all", "511-513", 1)
 davies_fun("oisst", "all", "511-513")
 ```
 
@@ -168,7 +168,6 @@ points(x = df$Year, y = df$Value)
 mean_cp <- mean_bp_fun("oisst", "all", "511-513", list(Value~1, 1~1))
 summary(mean_cp)
 plot(mean_cp)
-
 ```
 
 
@@ -194,7 +193,7 @@ acf_plot("fvcom_sst", "all", "511-513")
 The pscore test and davies tests indicate whether a breakpoint in the slope exists. The davies test is more sensitive to data that follow a more sinusoidal curve but less sensitive to linear changes. A significant p-value indicates there is a breakpoint in the data. A non-significant p-value indicates a breakpoint is not present.
 
 ```{r fvcom_sstbreakpoint_tests}
-pscore_fun("fvcom_sst", "all", "511-513")
+pscore_fun("fvcom_sst", "all", "511-513", 1)
 davies_fun("fvcom_sst", "all", "511-513")
 ```
 
@@ -244,7 +243,7 @@ acf_plot("fvcom_bt", "all", "511-513")
 The pscore test and davies tests indicate whether a breakpoint in the slope exists. The davies test is more sensitive to data that follow a more sinusoidal curve but less sensitive to linear changes. A significant p-value indicates there is a breakpoint in the data. A non-significant p-value indicates a breakpoint is not present.
 
 ```{r fvcom_breakpoint_tests}
-pscore_fun("fvcom_bt", "all", "511-513")
+pscore_fun("fvcom_bt", "all", "511-513", 1)
 davies_fun("fvcom_bt", "all", "511-513")
 ```
 

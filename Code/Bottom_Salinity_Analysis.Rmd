@@ -111,9 +111,7 @@ mean_bp_fun <- function(indicator, season, stat_areas, models){
     filter(Indicator == indicator,
            Season == season,
            stat_area == stat_areas)
-  
-  lm1 <- lm(Value ~ Year, data = df)
-  temp_mcp1 <- mcp::mcp(models, data = df, par_x = "Year")
+    temp_mcp1 <- mcp::mcp(models, data = df, par_x = "Year")
   return(temp_mcp1)
 }
 

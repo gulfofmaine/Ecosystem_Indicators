@@ -37,7 +37,7 @@ season_sel <- "all"
 stat_areas_sel <- "511-513"
 
 # Enter the npsi (estimated number of breakpoints) - might need to run the code first and assess the breakpoint stats
-Npsi <- 1 # estimated number of breakpoints
+Npsi <- 2 # estimated number of breakpoints
 # enter a list of models for the mean breakpoint - a model of 1~1 indicates intercept, adding additional models incudes additional bp
 model_list <- list(Value~1, 1~1, 1~1)
 ```
@@ -73,14 +73,14 @@ acf_plot <- function(indicator, season, stat_areas){
   acf(df)
 }
 
-pscore_fun <- function(indicator, season, stat_areas){
+pscore_fun <- function(indicator, season, stat_areas, nbreak){
   df <- allIndicators %>% 
     filter(Indicator == indicator,
            Season == season,
            stat_area == stat_areas)
   
   lm1 <- lm(Value ~ Year, data = df)
-  pscore <- segmented::pscore.test(lm1)
+  pscore <- segmented::pscore.test(lm1, n.break = nbreak)
   return(pscore)
 }
 
@@ -154,14 +154,14 @@ acf_plot(indicator_sel, season_sel, stat_areas_sel)
 The pscore test and davies tests indicate whether a breakpoint in the slope exists. The davies test is more sensitive to data that follow a more sinusoidal curve but less sensitive to linear changes. A significant p-value indicates there is a breakpoint in the data. A non-significant p-value indicates a breakpoint is not present.
 
 ```{r breakpoint_tests}
-pscore_fun(indicator_sel, season_sel, stat_areas_sel)
+pscore_fun(indicator_sel, season_sel, stat_areas_sel, 1)
 davies_fun(indicator_sel, season_sel, stat_areas_sel)
 ```
 
 #### Slope breakpoint
 
 ```{r slope_segments}
-bp <- slope_bp_fun(indicator_sel, season_sel, stat_areas_sel, Npsi)
+bp <- slope_bp_fun(indicator_sel, season_sel, stat_areas_sel, 1)
 summary(bp)
 plot(bp)
 df <- allIndicators %>% 

@@ -52,12 +52,6 @@ NEFSC_meIndex <- read_csv(here::here("Biological_data/nmfs_trawl_lobster_indices
   rename("Year" = est_year, "stat_area" = lobster_strata) %>% 
   mutate(stat_area = as.factor(stat_area))
 
-bp_analysis <- function(x, npsi){
-  mod <-  lm(lob_index ~ Year, data = x)
-  o <- tryCatch(segmented::segmented(mod, seg.Z = ~Year, npsi = npsi),  # need to estimate bp
-                error = function(cond){cond})
-}
-
 ```
 
 
@@ -107,6 +101,7 @@ ALSI <- bind_rows(ALSI_stat_area, ALSIyr)
 ALSI$stat_area <- factor(ALSI$stat_area, levels = c("511", "512", "513", "511-513"))
 
 ALSI$Season <- "all"
+ALSI$Sex <- "M+F"
 
 ALSI_plot <- ALSI %>% 
   ggplot() +
@@ -116,14 +111,6 @@ ALSI_plot <- ALSI %>%
 
 ALSI_plot
 
-ALSI_bp <- ALSI %>% 
-  nest(data = -c(stat_area, name, Season)) %>% 
-  mutate(mod = map(data, ~bp_analysis(.x, npsi = 1)),
-         breakpoint1 = purrr::map(mod, ~.x$psi[[2]])) %>% 
-  select(stat_area, name, Season, breakpoint1) %>% 
-  unnest(breakpoint1)
-
-knitr::kable(ALSI_bp)
 ```
 
 #### Sublegal index
@@ -230,6 +217,7 @@ sublegal_cpue <- bind_rows(sublegal_cpue, sublegal_cpue_yr)
 sublegal_cpue$stat_area <- factor(sublegal_cpue$stat_area, levels = c("511", "512", "513", "511-513"))
 
 sublegal_cpue$Season <- "all"
+sublegal_cpue$Sex <- "M+F"
 
 sublegal_plot <- sublegal_cpue %>% 
   ggplot() +
@@ -243,17 +231,50 @@ sublegal_var_plot <- sublegal_vari %>%
   scale_color_discrete(name = "Stat area") +
   labs(y = "Sublegal lobster variance")
 
-sublegal_cpue_bp <- sublegal_cpue %>% 
-  nest(data = -c(stat_area, name, Season)) %>% 
-  mutate(mod = map(data, ~bp_analysis(.x, 1)),
-         breakpoint1 = purrr::map(mod, ~.x$psi[[2]])) %>% 
-  select(stat_area, name, breakpoint1) %>% 
-  unnest(breakpoint1)
 
 sublegal_plot
 
-knitr::kable(sublegal_cpue_bp)
+
 ```
+
+
+#### Gulf of Maine index
+
+```{r MENHindex}
+
+GOMindex <- GOMindex %>% 
+  mutate(Season = if_else(Season == 2, "spring", "fall"),
+         Season = as.factor(Season))
+
+GOMindex_all_season <- GOMindex %>% 
+  group_by(Sex, stat_area, Year) %>% 
+  summarise(lob_index = mean(lob_index)) %>% 
+  mutate(Season = "all")
+
+GOMindex_all_sex <- GOMindex %>% 
+  group_by(Season, stat_area,Year) %>% 
+  summarise(lob_index = mean(lob_index)) %>% 
+  mutate(Sex = "M+F")
+
+GOMindex_all_season_sex <- GOMindex %>% 
+  group_by(stat_area, Year) %>% 
+  summarise(lob_index = mean(lob_index)) %>% 
+  mutate(Sex = "M+F",
+         Season = "all")
+
+GOMindex <- bind_rows(GOMindex, GOMindex_all_season, GOMindex_all_sex, GOMindex_all_season_sex)
+
+
+GOMindex$name <- "MEindex"
+
+GOMindex %>% 
+  ggplot() +
+  geom_line(aes(Year, lob_index)) +
+  facet_wrap(~name) +
+  labs(y = "Nefsc trawl lob abundance index")
+
+```
+
 
 
 #### ME-NH Trawl Survey
@@ -380,6 +401,7 @@ MENH_lob_index <- bind_rows(MEDMR_cpue, MEDMR_cpue_yr, MEDMR_cpue_stat, MEDMR_cp
   mutate(Season = tolower(Season))
 
 MENH_lob_index$stat_area <- factor(MENH_lob_index$stat_area, levels = c("511", "512", "513", "511-513"))
+MENH_lob_index$Sex <- "M+F"
 
 MENH_lob_index %>% 
   filter(name == "menh_biomass") %>% 
@@ -397,14 +419,6 @@ MENH_lob_index %>%
   labs(y = "ME-NH Trawl abundance") +
   facet_wrap(~Season)
 
-MENH_lob_index_bp <- MENH_lob_index %>% 
-  nest(data = -c(stat_area, Season, name)) %>% 
-  mutate(mod = map(data, ~bp_analysis(.x, 1)),
-         breakpoint1 = purrr::map(mod, ~.x$psi[[2]])) %>% 
-  select(stat_area, name, Season, breakpoint1) %>% 
-  unnest(breakpoint1)
-
-knitr::kable(MENH_lob_index_bp)
 
 ```
 
@@ -417,23 +431,16 @@ Yearly Maine lobster landings in pounds from 1950-2020.
 
 ME_pounds <- ME_landings %>% 
   mutate(name = "ME_landings",
-         Season = "all") %>% 
-  select(Year, "lob_index" = Pounds, name, stat_area, Season) 
+         Season = "all",
+         Sex = "M+F") %>% 
+  select(Year, "lob_index" = Pounds, name, stat_area, Season, Sex) 
 
 ME_pounds %>% 
   ggplot() +
   geom_line(aes(Year, lob_index)) +
   labs(y = "Maine lobster landings (pounds)")
 
-ME_pounds_bp <- ME_pounds %>% 
-  nest(data = -c(stat_area, name, Season)) %>% 
-  mutate(mod = map(data, ~bp_analysis(.x, 2)),
-         breakpoint1 = purrr::map(mod, ~.x$psi[[1,2]]),
-         breakpoint2 = purrr::map(mod, ~.x$psi[[2,2]])) %>% 
-  select(stat_area, name, breakpoint1, breakpoint2) %>% 
-  unnest(c(breakpoint1, breakpoint2))
 
-ME_pounds_bp
 
 ```
 
@@ -448,21 +455,33 @@ NEFSCindex <- NEFSCindex %>%
   mutate(Season = if_else(Season == 2, "spring", "fall"),
          Season = as.factor(Season))
 
+NEFSC_all_season <- NEFSCindex %>% 
+  group_by(Sex, stat_area, Year) %>% 
+  summarise(lob_index = mean(lob_index)) %>% 
+  mutate(Season = "all")
+
+NEFSC_all_sex <- NEFSCindex %>% 
+  group_by(Season, stat_area, Year) %>% 
+  summarise(lob_index = mean(lob_index)) %>% 
+  mutate(Sex = "M+F")
+
+NEFSC_all_season_sex <- NEFSCindex %>% 
+  group_by(stat_area, Year) %>% 
+  summarise(lob_index = mean(lob_index)) %>% 
+  mutate(Sex = "M+F",
+         Season = "all")
+
+NEFSCindex <- bind_rows(NEFSCindex, NEFSC_all_season, NEFSC_all_sex, NEFSC_all_season_sex)
+
+NEFSCindex$name <- "NEFSCindex"
+
 NEFSCindex %>% 
   ggplot() +
   geom_line(aes(Year, lob_index)) +
   facet_wrap(~name) +
   labs(y = "Nefsc trawl lob abundance index")
 
-NEFSCindex_bp <- NEFSCindex %>% 
-  nest(data = -c(stat_area, name, Sex, Season)) %>% 
-  mutate(mod = map(data, ~bp_analysis(.x, 2)),
-         breakpoint1 = purrr::map(mod, ~.x$psi[[1,2]]),
-         breakpoint2 = purrr::map(mod, ~.x$psi[[2,2]])) %>% 
-  select(stat_area, Sex, name, breakpoint1, breakpoint2) %>% 
-  unnest(c(breakpoint1, breakpoint2))
 
-NEFSCindex_bp
 ```
 
 
@@ -492,6 +511,9 @@ NEFSC_lobIndex <- bind_rows(NEFSC_meLobIndex, NEFSC_meIndex_yr) %>%
   select(-`stratum area`)
 NEFSC_lobIndex$stat_area <- factor(NEFSC_lobIndex$stat_area, levels = c("511", "512", "513", "511-513"))
 
+NEFSC_lobIndex$Sex <- "M+F"
+
+
 
 NEFSC_lobIndex %>% 
   filter(name == "nefsc_biomass") %>% 
@@ -509,26 +531,14 @@ NEFSC_lobIndex %>%
   labs(y = "NEFSC Trawl abundance") +
   facet_wrap(~Season)
 
-NEFSC_lobIndex_bp <- NEFSC_lobIndex %>% 
-  nest(data = -c(stat_area, Season, name)) %>% 
-  mutate(mod = map(data, ~bp_analysis(.x, 2)),
-         breakpoint1 = purrr::map(mod, ~.x$psi[[1,2]]),
-         breakpoint2 = purrr::map(mod, ~.x$psi[[2,2]])) %>% 
-  select(stat_area, Season, name, breakpoint1, breakpoint2) %>% 
-  unnest(c(breakpoint1, breakpoint2))
-
-NEFSC_lobIndex_bp
-
 ```
 
 
 ```{r all_lob_data}
-all_lob_data <- bind_rows(NEFSC_lobIndex, NEFSCindex, ME_pounds, MENH_lob_index, sublegal_cpue, ALSI)
+all_lob_data <- bind_rows(NEFSC_lobIndex, NEFSCindex, GOMindex, ME_pounds, MENH_lob_index, sublegal_cpue, ALSI)
 
 write_csv(all_lob_data, here::here("Processed_Indicators/all_lob_data.csv"))
 
-lob_breakpoints <- bind_rows(NEFSC_lobIndex_bp, NEFSCindex_bp, ME_pounds_bp, MENH_lob_index_bp, sublegal_cpue_bp, ALSI_bp)
 
-write_csv(lob_breakpoints, here::here("Processed_Indicators/lob_breakpoints.csv"))
 ```
 
