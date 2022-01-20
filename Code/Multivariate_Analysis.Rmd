@@ -1,5 +1,5 @@
 ---
-title: "Indicators of Habitat and Ecosystem Change"
+title: "Multivariate Analysis"
 author: "Matt Dzaugis"
 date: "`r Sys.Date()`"
 output: 
@@ -62,7 +62,9 @@ The following indicators are used in this report
 * Surface and bottom salinity anomalies (FVCOM)
 * Maine Coastal Current Index (FVCOM)
 * Species-based lobster predator index (NOAA Trawl Survey)
-* Continuous Plankton Recordings
+* Size-based lobster predator index (NOAA Trawl Survey)
+* Continuous Plankton Recordings First Mode (small zooplankton)
+* Continuous Plankton Recordings Second Mode (Calanus)
 
 
 ```{r read_data}
@@ -76,15 +78,13 @@ indicators <- unique(allIndicators$Indicator)
 
 ### Indicators PCA{.tabset}
 
-Previous analysis shows surface and bottom temperature and surface and bottom salinity load similarly in a PCA. To reduce variables only bottom temperature and salinity are used in the following PCA.
+Previous analysis shows surface and bottom temperature and surface and bottom salinity load similarly in a PCA. To reduce variables only bottom temperature and bottom salinity are used in the following PCA.
 
-* Data: Bottom temp, bottom salinity, MCC, Predator Index, CPR data mode one and two
+* Data: Bottom temp, bottom salinity, MCC, species based predator index, size based predator index, small zooplankton index, Calanus index
 * Method: Principal components analysis 
 * Years: 1990-2016
 
 #### PCA Summary
-
-The first three principal components have eigenvalues greater than one and were retained for further analysis. PC1 and PC2 explain 34.5% and 24.8% of the variability, respectively. PC3 explains an additional 14.4% of the variability.
 
 ```{r PCA_summary}
 indicator_list <- c("fvcom_bt", "fvcom_bs","mcc", "nefsc_abundance", "nefsc_size_spectra_slope", "cpr_FirstMode", "cpr_SecondMode")
@@ -125,7 +125,7 @@ scree1 <- fviz_eig(indicator_pca, ylab = "% variance explained") + scale_y_conti
 #### PC time series
 
 
-Below are the time series for PC1, PC2, and PC3. PC1 and PC2 time series are highly correlated between stat areas. 
+Below are the time series for PC1, PC2, and PC3.
 
 ```{r pcaTimeSeries}
 
@@ -164,14 +164,7 @@ PC1plot / PC2plot / PC3plot
 
 #### Loadings plot
 
-Indicators load similarly for each stat area. The Maine coastal current, first mode (small zooplankton), and second mode (Calanus) tend to load together. The lobster predator index has the most variable relationship to PC1 and PC2 with respect to stat area. In stat area 512 and 513, predators loads with bottom temperature. In area 511, predators load separated from the rest of the indicators and has a stronger influence on PC2 than PC1. Bottom salinity and the plankton FirstMode (Calanus) tend to load similarly for each stat area. 
-
-Interpretation:
-
-* PC1: Bottom salinity and Maine Coastal Current load directly opposite and are the largest contributors to PC1
-* PC1: Contribution of bottom temperature increases from stat area 511 to 513
-* PC2: Small zooplankton and Calanus group together and load opposite to bottom temperature and predators
-
+The loadings plots show how each indicator is related to the resulting principal components.
 
 ```{r loadings, echo=FALSE, message=FALSE, warning=FALSE, fig.cap="Figure 4. Loadings of the variables"}
 
@@ -491,10 +484,10 @@ aicModelGAM2 <- function(lob_name, k){
            gam2 = purrr::map(data, ~mgcv::gam(lob_index ~ s(PC1, by = Period, k=4) + 
                                                 s(Year, bs="re", k=4),
                                               data = .x, method="REML")),
-           gam3 = purrr::map(data, ~mgcv::gam(lob_index ~ s(PC1, by = Period, k=4) + 
+           gam3 = purrr::map(data, ~tryCatch(mgcv::gam(lob_index ~ s(PC1, by = Period, k=4) + 
                                                 s(PC2, by = Period, k=4) + 
                                                 s(Year, bs="re", k=4),
-                                              data = .x, method="REML")))
+                                              data = .x, method="REML"), error = function(cond){cond})))
   return(gams)
 }
 
@@ -528,7 +521,6 @@ aicModel_indicators <- function(x){
 
 #### ALSI index
 
-The ALSI index is not significantly correlated with PC1 or PC
 
 Correlation table
 
@@ -599,14 +591,14 @@ cor_fun("ME_landings") %>%
 
 Scatter plot
 
-```{r}
+```{r landingsPlot}
 xyPlot("ME_landings")
 ```
 
 
 AIC lm model selection table
 
-```{r}
+```{r landingsLM}
 stepwiseAIC("ME_landings")
 aicSelGAM <- aicModelGAM("ME_landings", 4)
 AIC(aicSelGAM$gam1[[1]], aicSelGAM$gam2[[1]],aicSelGAM$gam3[[1]],aicSelGAM$gam4[[1]])
@@ -618,7 +610,7 @@ summary(aicSelGAM$gam2[[1]])
 ```
 
 
-#### ME Trawl index
+#### ME Trawl biomass and abundance
 
 Correlation table
 
@@ -632,7 +624,7 @@ cor_fun("menh_abundance") %>%
 
 Scatter plot
 
-```{r}
+```{r MEtrawlPlot}
 xyPlot("menh_biomass")
 xyPlot("menh_abundance")
 ```
@@ -640,7 +632,7 @@ xyPlot("menh_abundance")
 
 AIC lm model selection table
 
-```{r}
+```{r MEtrawlLM}
 stepwiseAIC("menh_biomass")
 stepwiseAIC("menh_abundance")
 aicSelGAM <- aicModelGAM("menh_biomass", 5)
@@ -662,7 +654,7 @@ summary(aicSelGAM$gam2[[1]])
 ```
 
 
-#### NEFSC trawl index
+#### NEFSC trawl biomass and abundance
 
 Correlation table
 
@@ -676,7 +668,7 @@ cor_fun("nefsc_abundance") %>%
 
 Scatter plot
 
-```{r}
+```{r NEFSCtrawl plot}
 xyPlot("nefsc_biomass")
 xyPlot("nefsc_abundance")
 ```
@@ -684,7 +676,7 @@ xyPlot("nefsc_abundance")
 
 AIC lm model selection table
 
-```{r}
+```{r NEFSCtrawl lm}
 stepwiseAIC("nefsc_biomass")
 stepwiseAIC("nefsc_abundance")
 aicSelGAM <- aicModelGAM("nefsc_biomass", 4)
@@ -705,24 +697,24 @@ summary(aicSelGAM$gam3[[1]])
 ```
 
 
-#### NEFSC index
+#### NEFSC ASMFC index
 
 Correlation table
 
-```{r ALSI corrs}
+```{r NEFSCindex corrs}
 cor_fun("NEFSCindex") %>% 
   knitr::kable()
 ```
 
 Scatter plot
 
-```{r xyALSI plot}
+```{r NEFSCindex plot}
 xyPlot("NEFSCindex")
 ```
 
 AIC lm model selection table
 
-```{r aicALSI}
+```{r aicNEFSCindex}
 stepwiseAIC("NEFSCindex")
 aicSelGAM <- aicModelGAM("NEFSCindex", 4)
 AIC(aicSelGAM$gam1[[1]], aicSelGAM$gam2[[1]],aicSelGAM$gam3[[1]],aicSelGAM$gam4[[1]])
@@ -734,24 +726,24 @@ summary(aicSelGAM$gam3[[1]])
 ```
 
 
-#### NEFSC index
+#### ME ASMFC index
 
 Correlation table
 
-```{r ALSI corrs}
+```{r ME ASMFC corrs}
 cor_fun("MEindex") %>% 
   knitr::kable()
 ```
 
 Scatter plot
 
-```{r xyALSI plot}
+```{r xyME ASMFC plot}
 xyPlot("MEindex")
 ```
 
 AIC lm model selection table
 
-```{r aicALSI}
+```{r aicME ASMFC}
 stepwiseAIC("MEindex")
 aicSelGAM <- aicModelGAM("MEindex", 4)
 AIC(aicSelGAM$gam1[[1]], aicSelGAM$gam2[[1]],aicSelGAM$gam3[[1]],aicSelGAM$gam4[[1]])
@@ -764,8 +756,9 @@ summary(aicSelGAM$gam1[[1]])
 
 
 
-#### Cluster Analysis
+### Cluster Analysis
 
+Cluster analysis of the lobster biological data.
 
 ```{r cluster Analysis}
 lobData <- all_lob_data %>%  
@@ -789,8 +782,10 @@ kmeans_scree <- ggplot() +
   labs(x = "Number of Clusters",
   y ="Within groups sum of squares")
 
+kmeans_scree
+
 # K-Means Cluster Analysis
-fit <- allIndex_scaled %>% kmeans(4)
+fit <- allIndex_scaled %>% kmeans(3)
 
 fviz_cluster(object = fit, data = allIndex_scaled) + 
   theme_bw() 

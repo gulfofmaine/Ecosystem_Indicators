@@ -1,0 +1,65 @@
+---
+title: "Update_buoys_erddap"
+author: "Matt Dzaugis"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(rerddap)
+library(ncdf4)
+library(tidyverse)
+library(lubridate)
+
+source(here::here("Code/UpdateBuoy_functions.R"))
+```
+
+## UpdateBuoy overview
+
+`UpdateBuoy(buoy, smoothing, surfbot)`
+
+`UpdateBuoy` has four arguments: `buoy`, `path.location`, `smoothing`, and `surfbot`. There are no default choices for the arguments, so each argument has to be called in the function. This function takes a little over 1.5 min in total to download and extract data from all 6 buoys; so each buoy takes about 15 seconds.  
+
+* `buoy` calls on one of six NERACOOS buoys: "B01", "E01", "F01", "I01", "M01", or "N01". 
+* `smoothing` is logical, TRUE or FALSE. If TRUE, the data are smoothed with an 8 day rolling mean and included in the list as a separate vector with the daily mean and date. If FALSE the rolling mean is not calculated.
+* `surfbot` is logical, TRUE or FALSE and only applies to temperature data. If TRUE, missing 50m temperature data are filled in using modeled data from a linear regression with surface data. If `smoothing = TRUE` AND `surfbot = TRUE`, then the 8 day rolling mean is not calculated for 50m temperature. 
+
+`UpdateBuoy` uses packages `here`, `ncdf4`, `lubridate`, `tidyverse`, and `tibbletime`. The `library_check` function can be used to install or load these functions and is included at the end of this document. 
+
+### Run the function
+
+```{r UpdateBuoy Overview, warning=FALSE, message=FALSE, results='hide'}
+BB<-UpdateBuoy(buoy="B01",smoothing=FALSE,surfbot=FALSE)
+BE<-UpdateBuoy(buoy="E01",smoothing=FALSE,surfbot=FALSE)
+BF<-UpdateBuoy(buoy="F01",smoothing=FALSE,surfbot=FALSE)
+BI<-UpdateBuoy(buoy="I01",smoothing=FALSE,surfbot=FALSE)
+BM<-UpdateBuoy(buoy="M01",smoothing=FALSE,surfbot=FALSE)
+BN<-UpdateBuoy(buoy="N01",smoothing=FALSE,surfbot=FALSE)
+BA<-UpdateBuoy(buoy="A01",smoothing=FALSE,surfbot=FALSE)
+
+Buoys <-list("Buoy_A" = BA, "Buoy_B" = BB, "Buoy_E" = BE, "Buoy_F" = BF, "Buoy_I" = BI, "Buoy_M" = BM, "Buoy_N" = BN)
+
+Buoys_unlisted <- reshape2::melt(Buoys, id.vars = "Date") %>% 
+  rename("Type" = variable, "Variable" = L3, "Depth" = L2, "name" = L1) %>% 
+  mutate(Depth = as.double(parse_number(Depth)), 
+         name = str_replace_all(name, "_", " "), 
+         Type = paste("raw"),
+         Date = as.Date(Date),
+         dayz = day(Date),
+         mon = month(Date),
+         yr = year(Date)) %>% 
+  group_by(Variable, Depth, name, dayz, mon) %>%
+  mutate(clim = mean(value, na.rm = TRUE)) %>% ungroup() %>%
+  mutate(Anomaly = value - clim) %>% dplyr::select(name, Date, Depth, Variable, Anomaly, "raw" = value) %>% 
+  pivot_longer(., cols = c(Anomaly, raw), names_to = "Type", values_to = "Values")
+
+
+data.table::fwrite(Buoys_unlisted, here::here("Data/Buoy_data.csv"))
+```
+
+
+
+
+
+

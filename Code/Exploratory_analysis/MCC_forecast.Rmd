@@ -1,0 +1,233 @@
+---
+title: "MCC_forecast"
+author: "Matt Dzaugis"
+date: "6/25/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message=FALSE, warning=FALSE)
+library(tidyverse)
+library(lubridate)
+library(factoextra)
+library(sf)
+suppressPackageStartupMessages(require(tsibble))
+suppressPackageStartupMessages(require(randomForest))
+suppressPackageStartupMessages(require(forecast))
+```
+
+## Gulf of Maine Coastal Current
+
+The Gulf of Maine Coastal Current is a semi-continuous current that extends from couthern Nova Scotia to Cap Cod, MA. It is semi-continuous in that is sometime extends the entire length of the coast of Maine and other times breaks off into two (or more) branches. The branches often diverge at Penobscot Bay, forming the Eastern Maine Coastal Current (EMCC) and Western Maine Coastal Current (WMCC). It is hypothesized that the degree of continuity between the continuity between the EMCC and WMCC has implications for phytoplankton, zooplankton, and larval lobster transpot (Pettigrew et al. 1994, McManus et al 2014, Townsend et al 2004, Xue et al 2008,...). Using a prncipal components analysis of surface current speed and direction of an area just offshore of Penobscot Bay, I created a Maine Coastal Current Index that captures the connectivity between the EMCC and WMCC. In this analysis, the first principal component, which capture 32.4% of the variability in the dataset, provides a strong index of connectivity. The second principal component, which captures 15.4% of the variability, is some sort of signal related to month. 
+
+## Methods
+
+### Location of Maine Coastal Current Turnoff
+
+An area that extends from Popham Beach in the west to Jonesport in the east and offshore out to Jordan Basin was identified as the area that encompased the most eastern and western locations where the MCC turns off shore (figure 1). This area was purposfully choosen to exclude most of the coastal islands, as the highly variable currents around the islands led to some spurious results. Water velocity and direction data from this area were used to calculate the Maine Coastal Current Index. 
+
+```{r more-data, message=FALSE, warning=FALSE, results='hide'}
+mcc_turnoff_sf <- st_read("mcc_turnoff/MCC_turnoff-polygon.shp")
+
+map_state <- map_data(map="state")
+ne_us <- subset(map_state, region %in% c("maine"))
+```
+
+
+```{r shp, message=FALSE, warning=FALSE, fig.cap= "Location of the area used to calculate the Maine Coastal Current Index"}
+
+ggplot() + geom_polygon(data= ne_us, aes(x = long, y = lat, group = group), fill = "grey", color = "black") + 
+  geom_sf(data = mcc_turnoff_sf) + theme(panel.background = element_blank(), panel.grid = element_blank(), axis.title = element_blank())
+```
+
+### Principal Components Analysis
+
+Data from Finite Volume Community Ocean Model (FVCOM) were used for the northward and eastward water velocities from the years 1980-2016. FVCOM is an unstructured grid and as such contains cells of different sizes. The data were transformed to a regular 1/10 degree grid for this analysis. A PCA was used to determine the leading modes of variability of the water current data. Each eastward and northward vector for each grid cell were used as the variables and each Date (month and year) were the observations.
+
+
+```{r read_data, message=FALSE, warning=FALSE}
+mcc_turnoff_subset <- read_csv("shiny/Data/mcc_turnoff_subset.csv")
+mcc_all <- mcc_turnoff_subset %>% na.omit() %>% mutate(ID = paste(lat,lon, sep = "_"), yr = year(Date)) %>% 
+  filter(yr >= 1980) %>%
+  select(-lat, -lon, -yr) %>% pivot_wider(names_from = ID, values_from = c(u,v)) %>% 
+  column_to_rownames("Date")
+
+set.seed(1)
+samp <- sample(nrow(mcc_all), nrow(mcc_all)*.75)
+
+mcc_train <- mcc_all[samp,]
+mcc_test <- mcc_all[-samp,]
+
+mcc_pca <- prcomp(mcc_train, scale. = TRUE, center = TRUE)
+expl.var <- round(mcc_pca$sdev^2/sum(mcc_pca$sdev^2)*100)
+fviz_eig(mcc_pca)
+
+# prediction of pcs for validataion
+pred <- predict(mcc_pca, newdata = mcc_test)
+
+### plot results
+COLOR <- c(2:4)
+PCH <- c(1,16)
+
+pc <- c(1,2)
+
+png("pca_pred.png", units="in", width=5, height=4, res=200)
+op <- par(mar=c(4,4,1,1), ps=10)
+plot(mcc_pca$x[,pc], cex=PCH[1], 
+ xlab=paste0("PC ", pc[1], " (", expl.var[pc[1]], "%)"), 
+ ylab=paste0("PC ", pc[2], " (", expl.var[pc[2]], "%)")
+)
+points(pred[,pc], pch=PCH[2])
+legend("topright", legend=levels(mcc_all$Species), fill = COLOR, border=COLOR)
+legend("topleft", legend=c("training data", "validation data"), col=1, pch=PCH)
+par(op)
+dev.off()
+
+```
+
+```{r first 3 pca}
+mcc_pca <- prcomp(mcc_all, scale. = TRUE, center = TRUE)
+
+mcc_pca_pc1 <- data.frame(mcc_pca$x[,1])
+mcc_pca_pc1 <- rownames_to_column(mcc_pca_pc1, "Date")
+mcc_pca_pc1 <- rename(mcc_pca_pc1, "PC1" = mcc_pca.x...1.)
+
+mcc_pca_pc2 <- data.frame(mcc_pca$x[,2])
+mcc_pca_pc2 <- rownames_to_column(mcc_pca_pc2, "Date")
+mcc_pca_pc2 <- rename(mcc_pca_pc2, "PC2" = mcc_pca.x...2.) 
+
+mcc_pca_pc3 <- data.frame(mcc_pca$x[,3])
+mcc_pca_pc3 <- rownames_to_column(mcc_pca_pc3, "Date")
+mcc_pca_pc3 <- rename(mcc_pca_pc3, "PC3" = mcc_pca.x...3.)
+  
+mcc_tbl <- left_join(mcc_pca_pc1, mcc_pca_pc2, by = "Date") %>% left_join(.,  mcc_pca_pc3, by= "Date") %>%
+  mutate(Date = as.Date(Date), mon = month(Date), yr = year(Date), yrmon = yearmonth(Date)) %>% dplyr::select("Date" = yrmon, PC1, PC2, PC3) %>% as_tsibble(index = "Date")
+```
+
+
+
+```{r forecast}
+mcc_ts <- as.ts(mcc_tbl)
+
+#implicit missings
+has_gaps(mcc_tbl)
+#explicit missings
+colSums(is.na(mcc_tbl))
+
+plot_org <- mcc_tbl %>% ggplot(aes(x = Date)) + 
+  geom_line(aes(y=PC1))+ 
+  geom_line(aes(y=PC2), col = "red")+ 
+  geom_line(aes(y=PC3), col = "blue")
+plot_org
+```
+
+
+
+```{r}
+# difference the data to make stationary
+# not really a trend in this data
+# pretend we are in Dec 2015 and have to forecast next 12 months
+mcc_ts_org <- window(mcc_ts, end = c(2015,12))
+
+# estimate the required order of differencing
+n_diffs <- nsdiffs(mcc_ts_org[,"PC1"])
+
+
+# log transfor and difference the data
+mcc_ts_trf <- mcc_ts_org %>%
+  log() %>% diff(n_diffs)
+
+# check out the difference
+plot_trf <- mcc_ts_trf %>% autoplot()
+gridExtra::grid.arrange(plot_org, plot_trf)  
+```
+
+```{r}
+# desired number of lags (six months)
+# RF evaluates data points without bringing forward info from the past to the present (unlike lm or reccurent neural networks)
+# Defining lagging variables help bring about patterns from the past to be elevated at the present.
+# The choice of how far back to go depends on how cyclical the data is
+
+lag_order <- 24
+
+# the forecast horizon (twelve months)
+horizon <- 12
+# embed to create matrix
+mcc_ts_mbd <- embed(mcc_ts_org, lag_order +1 )
+
+y_train <- mcc_ts_mbd[, 1] # the target
+x_train <- mcc_ts_mbd[,-1] # everything else
+
+y_test <- window(mcc_ts, start = c(2016, 1), end = c(2016, 12))
+
+# the test set consisting of the six most recent values (we have six lags) of the training set
+# its the same for all models
+x_test <- mcc_ts_mbd[nrow(mcc_ts_mbd), c(1:(lag_order*3+2))] 
+
+
+forecasts_rf <- numeric(horizon)
+
+for(i in 1:horizon){
+  #set seed
+  set.seed(2019)
+  
+  # fit the model
+  fit_rf <- randomForest(x_train, y_train)
+  
+  # predict using the test set
+  forecasts_rf[i] <- predict(fit_rf, x_test)
+  
+  # here is where we repeatedly reshape the training data to
+  # reflect the time distance corresponding to teh current forecast horizon
+  
+  y_train <- y_train[-1]
+  
+  x_train <- x_train[-nrow(x_train),]
+  
+}
+
+# transform back
+# calculate exp_term
+
+# extract the last observation from teh time series (y_t)
+last_observation <- as.vector(tail(mcc_ts_org, 1))
+
+# calculate the final predictions
+
+backtransformed_forecasts <- last_observation
+
+#convert to ts format
+y_pred <- ts(
+  forecasts_rf,
+  start = c(2016,1),
+  frequency = 12
+)
+
+
+# add the forecasts to the original tibble
+mcc_tbl <- mcc_tbl %>% 
+  mutate(Forecast = c(rep(NA, length(mcc_ts_org[,1])), y_pred))
+
+# visulize the forecasts
+plot_fc <- mcc_tbl %>%
+  ggplot(aes(x = Date)) + geom_line(aes(y = PC1)) + geom_line(aes(y = Forecast), color = "blue") +
+  theme_minimal() + labs(title = "Lobster mcc Forecast 2018", x= "Year", y = "PC1")
+
+plot_fc
+
+accuracy(y_pred, y_test)
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+

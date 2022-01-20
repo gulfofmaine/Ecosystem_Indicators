@@ -1,0 +1,117 @@
+---
+title: "FVCOM access through thredds"
+author: "Matt Dzaugis"
+date: "2/9/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(fvcom)
+library(ncdf4)
+library(tidyverse)
+library(sf)
+library(lubridate)
+```
+
+### Access data
+
+FVCOM data can be accessed through the smast thredds url. This markdown follows along with the R package `fvcom` from [Bigelow Labs](https://github.com/BigelowLab/fvcom).
+
+```{r thredds_url}
+uri_base <- "http://www.smast.umassd.edu:8080/thredds/dodsC/models/fvcom/NECOFS/Archive/NECOFS_GOM/2019/"
+uri <- file.path(uri_base, "gom4_201901.nc")
+x <- nc_open(uri)
+
+dplyr::left_join(fvcom::fvcom_nodes(x, what = 'lonlat'), 
+                 fvcom::fvcom_nodes(x, what = 'xy'), by = "node")
+
+v <- get_node_var(x, var = 'zeta')
+  
+
+mesh <- get_mesh_geometry(x, what = 'lonlat')
+mesh <- get_mesh(x, vars = c("zeta", "u", "v"), mesh = mesh)
+
+uv <- raster::stack(sapply(c("u", "v"), function(f) rasterize(mesh, field = f), simplify = FALSE))
+library(rasterVis)
+rasterVis::vectorplot(uv, isField = TRUE, par.settings = viridisTheme())
+```
+
+## Get mesh from thredds server
+
+```{r get mesh}
+
+# Thredds path
+uri_path <-"http://www.smast.umassd.edu:8080/thredds/dodsC/fvcom/hindcasts/30yr_gom3/mean?lat[0:1:48450],lon[0:1:48450],nv[0:1:2][0:1:90414],nbe[0:1:2][0:1:90414],ntsn[0:1:48450],nbsn[0:1:10][0:1:48450],ntve[0:1:48450],nbve[0:1:8][0:1:48450],time[0:1:467],Times[0:1:467],zeta[0:1:467][0:1:48450],u[0:1:467][44][0:1:90414],v[0:1:467][44][0:1:90414]"
+
+x <- nc_open(uri_path)
+# node elements are scalar (like temp - identified in netcdf as node)
+# elements are vector (like velocity- identified in netcdf as nele)
+```
+
+
+```{r mesh}
+mesh <- get_mesh_geometry(x, what = 'lonlat')
+
+times <- ncvar_get(x, "time")
+
+u_cur <- ncvar_get(x, varid = "u")
+v_cur <- ncvar_get(x, varid = "v")
+lon_cur <- ncvar_get(x, varid = "lon")
+lat_cur <- ncvar_get(x, varid ="lat")
+node <- ncvar_get(x, varid = "nv")
+
+z1 <- as.vector(u_cur) %>% data.frame("u" = .)
+
+currents <- z1 %>% add_column(., "v" = as.vector(v_cur)) %>% add_column(., "lat" = rep(tmp2$lat,468)) %>% add_column(., "lon" = rep(tmp2$lon, 468)) %>% add_column(., "Date" = Date)
+
+nc_close(x)
+
+write_csv(currents, here::here("Data/current_df.csv"))
+```
+
+```{r get all current sigma layers}
+Date <- currents_df$Date
+
+URLS <- list()
+for(i in 1:44){
+  URLS[i] <-paste0("http://www.smast.umassd.edu:8080/thredds/dodsC/fvcom/hindcasts/30yr_gom3/mean?lat[0:1:48450],lon[0:1:48450],nv[0:1:2][0:1:90414],nbe[0:1:2][0:1:90414],ntsn[0:1:48450],nbsn[0:1:10][0:1:48450],ntve[0:1:48450],nbve[0:1:8][0:1:48450],time[0:1:467],Times[0:1:467],zeta[0:1:467][0:1:48450],u[0:1:467][",i,"][0:1:90414],v[0:1:467][",i,"][0:1:90414]")}
+
+# Box Path
+
+fvcom_base <- "/Users/mdzaugis/Box/Mills Lab/Projects/Lobster/FVCOM_mon_means/"
+yrs <- seq(1978, 2016, 1)
+mons <- c("01","01","03","04","05","06","07","08","09","10","11","12")
+fvcom_yrs <- paste0(fvcom_base, yrs)
+
+dates <- list()
+
+for(i in 1:length(mons)){
+  dates[[i]] <- paste0(yrs, mons[[i]], ".nc")
+}
+
+dates <- unlist(dates)
+
+for(i in 1:length(dates)){
+  URLS <- paste0(fvcom_base, dates[[i]])
+}
+
+
+for(i in 1:length(URLS)){
+  x <- nc_open(URLS[[i]])
+  u_cur <- ncvar_get(x, varid = "u")
+  v_cur <- ncvar_get(x, varid = "v")
+  lon_cur <- ncvar_get(x, varid = "lon")
+  lat_cur <- ncvar_get(x, varid ="lat")
+
+  z1 <- as.vector(u_cur) %>% data.frame("u" = .)
+
+  currents <- z1 %>% add_column(., "v" = as.vector(v_cur)) %>% add_column(., "lat" = rep(currents_df$lat)) %>% add_column(., "lon" = rep(currents_df$lon)) %>% add_column(., "Date" = Date)
+
+nc_close(x)
+write_csv(currents, paste0(here::here("Data/current_df_sigma_",i,".csv")))
+print(i)
+}
+
+```
+

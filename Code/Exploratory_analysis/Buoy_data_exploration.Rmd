@@ -1,0 +1,206 @@
+---
+title: "Buoy T-S"
+author: "Matt Dzaugis"
+date: "7/21/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+library(tidyverse)
+library(lubridate)
+library(broom)
+```
+
+## Read in Buoy data
+
+```{r cars}
+Buoys <- read_csv(here::here("Data/Buoy_data.csv"))
+```
+
+
+### Buoy based indicators
+
+This markdown calculates the inshore stratification index used in the Developing Indicators of ecosystem change report. It also contains some exploratory analysis of salinity data.
+
+```{r read_data}
+Buoy_csv <- read_csv(here::here("Data/Buoy_data.csv"))
+```
+
+```{r basic_plot_funs}
+yrday_plot <- function(type, avgInterval, depth, Bandwidth, variable){
+    plot1 <- switch(avgInterval,
+                    
+                  "day" = Buoy_csv %>% 
+                    filter(Variable == variable) %>% 
+                            filter(Type == type, Depth == depth) %>% 
+                    mutate(yrday = yday(Date),
+                           yr = year(Date)) %>% 
+                            ggplot() + 
+                    geom_point(aes(yrday, Values, col = as.factor(yr))) + 
+                    facet_wrap(~name, ncol = 2) +
+                    scale_color_viridis_d() + 
+                    theme_bw() + theme(panel.grid = element_blank()),
+                  
+                  "mon" = Buoy_csv %>% 
+                    filter(Variable == variable) %>% 
+                            filter(Type == type, Depth == depth) %>% group_by(name) %>% 
+                            mutate(
+                                   mon = month(Date),
+                                   yr = year(Date)) %>% group_by(mon, yr, name) %>% 
+                            summarise(Values = mean(Values, na.rm = TRUE), .groups = "drop") %>% 
+                            mutate(Date = as.Date(paste(yr, mon, "01", sep = "-"))) %>% 
+                            ggplot() + geom_line(aes(mon, Values, col = as.factor(yr))) + 
+                    facet_wrap(~name, ncol = 2) +
+                    scale_color_viridis_d() + 
+                    theme_bw()+ theme(panel.grid = element_blank()),
+                  
+                  "yr" = Buoy_csv %>% 
+                    filter(Variable == variable) %>% 
+                            filter(Type == type, Depth == depth) %>% group_by(name) %>% 
+                            mutate(
+                                   mon = month(Date),
+                                   yr = year(Date)) %>% group_by(yr, name) %>% 
+                            summarise(Values = mean(Values, na.rm = TRUE), .groups = "drop") %>% 
+                            ggplot() + geom_point(aes(name, Values, col = as.factor(yr))) +
+                    scale_color_viridis_d() + 
+                    theme_bw()+ theme(panel.grid = element_blank()),
+                  
+                    "ksmooth" = Buoy_csv %>% 
+                    filter(Variable == variable) %>% 
+                            filter(Type == type, Depth == depth) %>% 
+                    group_by(name, Type, Depth, Variable) %>% nest() %>% 
+                    mutate(Values = purrr::map(data, 
+                                               ~ksmooth(.x$Date, .x$Values, 
+                                                        kernel = "normal", bandwidth = Bandwidth)),
+           Values = purrr::map(Values, ~data.frame(.x))) %>% 
+    select(-data) %>% unnest(Values) %>% mutate(x = as.Date(x), 
+                                                yrday = yday(x), yr = year(x),
+                                                Values = y) %>% 
+    ggplot() + geom_line(aes(yrday, Values, col = as.factor(yr))) + 
+                    facet_wrap(~name, ncol = 2) +
+                    scale_color_viridis_d() + 
+      theme_bw() + theme(panel.grid = element_blank()))
+                            
+  return(plot1)
+}
+
+basic_plot <- function(type, avgInterval, depth, variable){
+  
+  plot1 <- switch(avgInterval,
+                  "day" = Buoy_csv %>% 
+                    filter(Variable == variable) %>% 
+                            filter(Type == type, Depth == depth) %>% 
+                            ggplot() + geom_line(aes(Date, Values)) + facet_wrap(~name, ncol = 2) + 
+                    theme_bw() + theme(panel.grid = element_blank()),
+                  
+                  "mon" = Buoy_csv %>% 
+                    filter(Variable == variable) %>% 
+                            filter(Type == type, Depth == depth) %>% group_by(name) %>% 
+                            mutate(
+                                   mon = month(Date),
+                                   yr = year(Date)) %>% group_by(mon, yr, name) %>% 
+                            summarise(Values = mean(Values, na.rm = TRUE), .groups = "drop") %>% 
+                            mutate(Date = as.Date(paste(yr, mon, "01", sep = "-"))) %>% 
+                            ggplot() + geom_line(aes(Date, Values)) + facet_wrap(~name, ncol = 2) + 
+                    theme_bw() + theme(panel.grid = element_blank()),
+                  
+                  "yr" = Buoy_csv %>% 
+                    filter(Variable == variable) %>% 
+                            filter(Type == type, Depth == depth) %>% group_by(name) %>% 
+                            mutate(
+                                   mon = month(Date),
+                                   yr = year(Date)) %>% group_by(yr, name) %>% 
+                            summarise(Values = mean(Values, na.rm = TRUE), .groups = "drop")  %>% 
+                            ggplot() + 
+                    geom_line(aes(yr, Values)) + facet_wrap(~name, ncol = 2) + labs(x = "Year") + 
+                    theme_bw() + theme(panel.grid = element_blank()))
+                            
+  return(plot1)
+}
+
+
+```
+
+```{r smoothing_plot_funs}
+
+
+sma_plot <- function(type, depth, Bandwidth, variable){
+  
+  Buoy_csv %>% filter(Variable == variable) %>% 
+                            filter(Type == type, Depth == depth) %>% 
+    mutate(Values = zoo::rollmean(Values, Bandwidth, fill = NA, align = "right")) %>% 
+                            ggplot() + geom_line(aes(Date, Values)) + facet_wrap(~name, ncol = 2) + 
+    theme_bw() + theme(panel.grid = element_blank())
+
+}
+
+triangularma_plot <- function(type, depth, Bandwidth, variable){
+  
+  Buoy_csv %>% filter(Variable == variable) %>% 
+                            filter(Type == type, Depth == depth) %>% 
+    mutate(Values = zoo::rollmean(zoo::rollmean(Values, Bandwidth, fill = NA, align = "right"), Bandwidth, fill = NA, align = "right")) %>% 
+                            ggplot() + geom_line(aes(Date, Values)) + facet_wrap(~name, ncol = 2) + theme_bw() + theme(panel.grid = element_blank())
+
+}
+
+KernelSmooth_plot <- function(type, depth, Bandwidth, variable){
+  
+  Buoy_csv %>% filter(Variable == variable) %>% 
+                            filter(Type == type, Depth == depth) %>% group_by(name, Type, Depth, Variable) %>% nest() %>% 
+    mutate(Values = purrr::map(data, ~ksmooth(.x$Date, .x$Values, kernel = "normal", bandwidth = Bandwidth)),
+           Values = purrr::map(Values, ~data.frame(.x))) %>% 
+    select(-data) %>% unnest(Values) %>% mutate(Values = y) %>% 
+    ggplot() + geom_line(aes(x,Values)) + facet_wrap(~name, ncol = 2) + theme_bw() + theme(panel.grid = element_blank())
+
+}
+
+```
+
+### Extreme saltwater and freshwater events
+
+The plots show the 1st and 99th percentiles of salinity, where the y axis shows the number 1% or 99% extreme events per year.
+
+```{r fw_events}
+
+fwsw <- Buoy_csv %>% 
+    filter(name %in% c("Buoy B", "Buoy E", "Buoy F", "Buoy I"), Variable == "sal") %>% 
+    filter(Type == "Anomaly") %>% 
+    mutate(mon = month(Date),
+           yr = year(Date)) %>% 
+    group_by(name, Type, Depth, Variable) %>% 
+    mutate(quantile = scales::percent(.99),
+           firstq = scales::percent(.01),
+           ninty5th = quantile(Values, .99, na.rm = TRUE),
+           fifth = quantile(Values, .01, na.rm = TRUE)) %>% 
+    mutate(SW = if_else(Values > ninty5th, 1, 0),
+           FW = if_else(Values < fifth, 1, 0)) %>% 
+    group_by(Type, Depth, Variable, yr) %>% 
+    summarise(FW = sum(FW, na.rm = TRUE),
+              SW = sum(SW, na.rm = TRUE),
+              .groups = "drop") 
+
+fwsw %>% ggplot() + geom_col(aes(yr, SW)) + facet_wrap(~Depth, ncol = 1) + theme_bw() + theme(panel.grid = element_blank())
+fwsw %>% ggplot() + geom_col(aes(yr, FW)) + facet_wrap(~Depth, ncol = 1) + theme_bw() + theme(panel.grid = element_blank())
+
+```
+
+
+## T-S relationship
+
+```{r T_S, echo=FALSE}
+
+T_S <- Buoys %>% 
+  mutate(yr = year(Date)) %>% filter(Variable %in% c("temp", "sal"), Type == "Anomaly") %>% 
+  group_by(name, Depth, yr) %>% pivot_wider(names_from = Variable, values_from = Values) %>%
+  na.omit() %>%
+  add_tally() %>%
+  filter(n > 50) %>%
+  nest() %>% 
+  mutate(mod = map(data, ~lm(temp ~ sal, data = .x)),
+         tidied = map(mod, tidy)) %>%
+  unnest(tidied) %>% filter(term == "sal")
+
+T_S %>% filter(name %in% c("Buoy M", "Buoy N")) %>% ggplot() + geom_line(aes(yr, estimate, col = as.factor(Depth))) + facet_wrap(~name) + theme_bw() + labs(y = "Slope", x = "Year", color = "Depth") + geom_smooth(aes(yr, estimate, col = as.factor(Depth)), method = "lm", se = FALSE)
+
+```

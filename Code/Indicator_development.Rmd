@@ -1,5 +1,5 @@
 ---
-title: "Indicators of Habitat and Ecosystem Change"
+title: "Processing Indicators of Habitat and Ecosystem Change"
 author: "Matt Dzaugis"
 date: "`r Sys.Date()`"
 output: 
@@ -275,7 +275,7 @@ write_csv(MCC, here::here("Processed_Indicators/MCC.csv"))
 
 * Brunt-Vaisala frequency N = sqrt(-g/potential density * delta density/delta depth)
 * the ocean stratification is quantified by the measured value of delta density/delta depth
-* If the water is more stratified, the frequency is higher. If less stratified, frequency is lower
+* If the water is more stratified, the frequency is higher. If less stratified, the frequency is lower
 
 Source: NERACOOS buoys
 
@@ -312,8 +312,6 @@ Methods:
 * Cropped to NOAA stat areas 511, 512, 513
 * Stratified abundance: abundance / km2 multiplied by the area of the strata
 * Stratified biomass: biomass / km2 multiplied by the area of the strata
-
-
 
 
 ```{r nefsc_pred_index}

@@ -1,0 +1,266 @@
+---
+title: "Analysis of Indicator"
+author: "Matt Dzaugis"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    toc: TRUE
+    toc_float:
+        collapsed: FALSE
+    code_folding: hide
+editor_options: 
+  chunk_output_type: console
+params:
+  indicator:
+    label: "Select an indicator to process"
+    value: "fvcom_bt"
+    input: select
+    choices: ["fvcom_bt","fvcom_sst","oisst","fvcom_bs","fvcom_sss","mcc","stratification","nefsc_biomass","nefsc_abundance","menh_abundance","menh_biomass","nefsc_size_spectra_slope","menh_size_spectra_slope","cpr_FirstMode","cpr_SecondMode"]
+  season:
+    label: "Select a season to process"
+    value: "all"
+    input: select
+    choices: ["all", "spring", "summer", "fall", "winter"]
+  stat_area:
+    label: "Select a statistical area to process"
+    value: "511-513"
+    input: select
+    choices: ["511", "512", "513", "511-513"]
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+library(tidyverse)
+library(patchwork)
+library(factoextra)
+library(gmRi)
+# Set theme  
+theme_set(theme_bw())
+```
+
+
+```{r read_data}
+# Indicators
+allIndicators <- read_csv(here::here("Processed_Indicators/allIndicators.csv"))
+allIndicators$Season <- factor(allIndicators$Season, levels= c("spring", "summer", "fall", "winter", "all"))
+allIndicators$stat_area <- factor(allIndicators$stat_area, levels= c("511", "512", "513", "511-513"))
+indicator <- data.frame("name" = unique(allIndicators$Indicator))
+indicator <- indicator %>% 
+  mutate(long_name = case_when(name == "fvcom_bt"~"FVCOM NECOFS bottom temperature",
+                      name == "fvcom_sst"~"FVCOM NECOFS surface temperature",
+                      name == "oisst"~"OISSTv2.1",
+                      name == "fvcom_bs"~"FVCOM NECOFS bottom salinity",
+                      name == "fvcom_sss"~"FVCOM NECOFS surface salinity",
+                      name == "mcc"~"Maine Coastal Current Index",
+                      name == "stratification"~"Stratification Index",
+                      name == "nefsc_biomass"~"NEFSC lobster predator biomass",
+                      name == "nefsc_abundance"~"NEFSC lobster predator abundance",
+                      name == "menh_abundance"~"ME/NH inshore trawl lobster predator abundance",
+                      name == "menh_biomass"~"ME/NH inshore trawl lobster predator biomass",
+                      name == "nefsc_size_spectra_slope"~"NEFSC size-based predator index",
+                      name == "menh_size_spectra_slope"~"ME/NH size-based predator index",
+                      name == "cpr_FirstMode"~"Small zooplankton index",
+                      name == "cpr_SecondMode"~"Calanus index"))
+# Enter indicator, season, stat area of interest
+
+indicator_sel <- params$indicator
+season_sel <- params$season
+stat_areas_sel <- params$stat_area
+long_name <- indicator$long_name[indicator$name == indicator_sel]
+
+df1 <- allIndicators %>% 
+  filter(Indicator == indicator_sel)
+
+seasons <- unique(df1$Season)
+stat_areas <- unique(df1$stat_area)
+
+if(season_sel %not in% seasons){
+  season_sel <- "all"
+  note1 <- "Selected season not available for this indicator. Returned result with 'all' seasons."
+} else {
+  note1 <- season_sel
+}
+
+if(stat_areas_sel %not in% stat_areas){
+  stat_areas_sel <- "511-513"
+  note2 <- "Selected stat area not available for this indicator. Returned result with stat areas '511-513'."
+} else {
+  note2 <- stat_areas_sel
+}
+
+df <- allIndicators %>% 
+    filter(Indicator == indicator_sel,
+           Season == season_sel,
+           stat_area == stat_areas_sel) %>% 
+    na.omit()
+```
+
+
+```{r functions}
+plot_fun <- function(x){
+  x %>% 
+    ggplot() + 
+    geom_line(aes(Year, Value, col = stat_area)) +
+    theme_bw() +
+    facet_wrap(~Season)
+}
+
+sumLms_fun <- function(x){
+  lm1 <- lm(Value ~ Year, data = x)
+  return(lm1)
+}
+
+
+acf_plot <- function(x){
+    df <- x %>% 
+      select(Year, Value) %>% 
+    na.omit()
+  acf(df)
+}
+
+pscore_fun <- function(x, nbreak){
+  df <- x
+  
+  lm1 <- lm(Value ~ Year, data = df)
+  pscore <- segmented::pscore.test(lm1, n.break = nbreak)
+  return(pscore)
+}
+
+davies_fun <- function(x){
+  df <- x
+  
+  lm1 <- lm(Value ~ Year, data = df)
+  davies <- segmented::davies.test(lm1)
+  return(davies)
+}
+
+slope_bp_fun <- function(x, Npsi){
+  df <- x
+  
+  lm1 <- lm(Value ~ Year, data = df)
+  
+  output <- tryCatch(segmented::segmented(lm1, seg.Z = ~Year, npsi = Npsi),
+                     warning = function(c) c,
+                     error = function(c) c)
+  
+  if(output[1] == "No breakpoint estimated"){
+    print(paste(output[1]), "Returning lm")
+  }
+  
+  if(output[1] == "$ operator is invalid for atomic vectors"){
+      print(paste(output[1], "Error occurs in segmented() with very large numbers and two breakpoints. Scaled provides valid results."))
+      lm1 <- lm(scale(Value) ~ Year, data = df)
+  
+      output <-segmented::segmented(lm1, seg.Z = ~Year, npsi = Npsi)
+  }
+  
+  return(output)
+  
+}
+
+mean_bp_fun <- function(x, models){
+    df <- x
+  
+  lm1 <- lm(Value ~ Year, data = df)
+  temp_mcp1 <- mcp::mcp(models, data = df, par_x = "Year")
+  return(temp_mcp1)
+}
+
+```
+
+
+`r use_gmri_style_rmd(css_file = "gmri_rmarkdown.css")`
+
+## Developing Indicators of Habitat and Ecosystem Change in the Gulf of Maine
+
+This report includes the initial analysis of the ecosystem and habitat indicators. Linear regression was used to assess trends over the length of the time series. A trend breakpoint analysis and a mean breakpoint analysis were run on the indicators. A breakpoint found in the slope of the line indicates a change in the trend of the data. A breakpoint in the mean of the date may indicate a regime shift or change of the overall state of the system. These analyses were run seasonally within statistical areas, when available, and as yearly averages across the entire study domain. 
+
+## Indicators
+
+The following indicators are used in this report
+
+* `r long_name`
+
+The following season and stat area are used in this report
+
+* `r note1`
+* `r note2`
+
+### `r long_name` {.tabset}
+
+#### Time series plot
+
+```{r plots}
+plot_fun(df)
+```
+
+#### Linear models
+
+```{r lms}
+lms <- sumLms_fun(df)
+plot(lms)
+summary(lms)
+acf_plot(df)
+```
+
+#### Slope breakpoint tests
+
+The pscore test and davies tests indicate whether a breakpoint in the slope exists. The davies test is more sensitive to data that follow a more sinusoidal curve but less sensitive to linear changes. A significant p-value indicates there is a breakpoint in the data. A non-significant p-value indicates a breakpoint is not present.
+
+```{r breakpoint_tests}
+pscore_fun(df, 1)
+pscore_fun(df, 2)
+davies_fun(df)
+```
+
+#### Slope breakpoint (1)
+
+```{r slope_segments_1bp, warning=TRUE}
+# Enter the npsi (estimated number of breakpoints) - might need to run the code first and assess the breakpoint stats
+bp <- slope_bp_fun(df, 1)
+summary(bp)
+plot(bp)
+points(x = df$Year, y = df$Value)
+```
+
+#### Slope breakpoint (2)
+
+```{r slope_segments_2bp, warning=TRUE}
+# Enter the npsi (estimated number of breakpoints) - might need to run the code first and assess the breakpoint stats
+bp <- slope_bp_fun(df, 2)
+summary(bp)
+plot(bp)
+points(x = df$Year, y = df$Value)
+```
+
+#### Slope breakpoint (3)
+
+```{r slope_segments_3bp, warning=TRUE}
+# Enter the npsi (estimated number of breakpoints) - might need to run the code first and assess the breakpoint stats
+bp <- slope_bp_fun(df, 3)
+summary(bp)
+plot(bp)
+points(x = df$Year, y = df$Value)
+```
+
+#### Mean breakpoint (1)
+
+```{r mean_bp1}
+# enter a list of models for the mean breakpoint - a model of 1~1 indicates intercept, adding additional models incudes additional bp
+model_list <- list(Value~1, 1~1)
+mean_cp <- mean_bp_fun(df, model_list)
+summary(mean_cp)
+plot(mean_cp)
+```
+
+#### Mean breakpoint (2)
+
+```{r mean_bp2}
+# enter a list of models for the mean breakpoint - a model of 1~1 indicates intercept, adding additional models incudes additional bp
+model_list <- list(Value~1, 1~1, 1~1)
+mean_cp <- mean_bp_fun(df, model_list)
+summary(mean_cp)
+plot(mean_cp)
+```
+
+

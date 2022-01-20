@@ -1,0 +1,89 @@
+---
+title: "Salinity index"
+author: "Matt Dzaugis"
+date: "10/23/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(shiny)
+library(ggplot2)
+library(lubridate)
+library(tidyverse)
+library(colorspace)
+library(here)
+```
+
+### Stratification calculation
+
+The Brunt-Vaisala frequency was used to calculate the ocean stratification between the surface and 50m depths. When the water is more stratified, the frequency is higher. When the water is less stratified the frequency is lower.
+
+#### Inshore stratification
+
+```{r strat_index}
+# Brunt-Vaisala frequency N = sqrt(-g/potential density * delta density/delta depth)
+# the ocean stratification is quantified by the measured value of delta density/delta depth
+# If the water is more stratified, the frequency is higher. If less stratified, frequency is lower
+
+# coastal
+
+mon_strat_index <- Buoy_csv %>% filter(Variable == "density", Type == "raw", name %in% c("Buoy B", "Buoy E", "Buoy F", "Buoy I")) %>% 
+  pivot_wider(names_from = Depth, values_from = Values) %>% group_by(name, Date) %>% 
+  mutate(difference = `1` - `50`,
+         index = sqrt(-(difference)/50)) %>% 
+  group_by(name, Type, Variable) %>% 
+  mutate(index = scale(index)) %>% 
+  mutate(mon = month(as.Date(Date)), yr = year(as.Date(Date))) %>%
+  group_by(Type, Variable, mon, yr) %>% 
+  summarise(index = mean(index, na.rm = TRUE)) %>% 
+  mutate(Date = as.Date(paste(yr,mon,"01", sep = "-"))) %>% 
+  group_by(mon) %>% mutate(clim = mean(index, na.rm = TRUE),
+                           Anomaly = index - clim) %>%  ungroup()
+
+mon_strat_index %>% ggplot() + geom_line(aes(Date,Anomaly)) +  theme_bw() + theme(panel.grid = element_blank())
+
+write_csv(mon_strat_index, here::here("Indicators/stratification_index.csv"))
+```
+
+#### Offshore stratification
+
+```{r offshore_stratification}
+
+# offshore
+
+Buoy_csv %>% filter(Variable == "density", Type == "raw", name %in% c("Buoy M", "Buoy N")) %>% 
+  pivot_wider(names_from = Depth, values_from = Values) %>% group_by(name, Date) %>% 
+  mutate(difference = `1` - `50`,
+         index = sqrt(-(difference)/50)) %>% 
+  group_by(name, Type, Variable) %>% 
+  mutate(index = scale(index)) %>% 
+  mutate(mon = month(as.Date(Date)), yr = year(as.Date(Date))) %>%
+  group_by(Type, Variable, mon, yr) %>% 
+  summarise(index = mean(index, na.rm = TRUE)) %>% 
+  mutate(Date = as.Date(paste(yr,mon,"01", sep = "-"))) %>% 
+  group_by(mon) %>% mutate(clim = mean(index, na.rm = TRUE),
+                           Anomaly = index - clim) %>% 
+  ggplot() + geom_line(aes(Date,Anomaly)) +  theme_bw() + theme(panel.grid = element_blank())
+
+Buoy_csv %>% filter(Variable == "density", Type == "raw", name %in% c("Buoy M", "Buoy N")) %>% 
+  pivot_wider(names_from = Depth, values_from = Values) %>% group_by(name, Date) %>% 
+  mutate(difference = `1` - `50`,
+         index = sqrt(-(difference)/50)) %>% 
+  group_by(name, Type, Variable) %>% 
+  mutate(index = scale(index)) %>% 
+  mutate(mon = month(as.Date(Date)), yr = year(as.Date(Date))) %>%
+  group_by(Type, Variable, mon, yr) %>% 
+  summarise(index = mean(index, na.rm = TRUE)) %>% 
+  mutate(Date = as.Date(paste(yr,mon,"01", sep = "-"))) %>% 
+  group_by(mon) %>% mutate(clim = mean(index, na.rm = TRUE),
+                           Anomaly = index - clim) %>% 
+  group_by(yr) %>% summarise(Anomaly = mean(Anomaly, na.rm = TRUE)) %>% 
+  ggplot() + geom_line(aes(yr,Anomaly)) +  theme_bw() + theme(panel.grid = element_blank())
+
+```
+
+
+
+
+
