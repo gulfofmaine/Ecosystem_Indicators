@@ -824,6 +824,4 @@ mle_maine %>%
        y = "Size Spectrum Slope (b)") + theme_bw()
 ```
 
-`r insert_gmri_footer()`
-
 
