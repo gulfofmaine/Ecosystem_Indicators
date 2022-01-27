@@ -27,7 +27,7 @@ library(gmRi)
 
 ## Gulf of Maine Coastal Current
 
-The Gulf of Maine Coastal Current is a semi-continuous current that extends from southern Nova Scotia to Cap Cod, MA. The Maine Coastal Current may extend the entire length of the coast of Maine and other times breaks off into two (or more) branches. The branches often diverge at Penobscot Bay, forming the Eastern Maine Coastal Current (EMCC) and Western Maine Coastal Current (WMCC). It is hypothesized that the degree of continuity between the continuity between the EMCC and WMCC has implications for phytoplankton, zooplankton, and larval lobster transport (Pettigrew et al. 1994, McManus et al 2014, Townsend et al 2004, Xue et al 2008). Using a principal components analysis of surface current speed for the eastward (u) direction of an area just offshore of Penobscot Bay, the Maine Coastal Current can be decomposed into the Maine Coastal Current Index that captures the connectivity between the EMCC and WMCC. In this analysis, the first principal component, which capture 48.7% of the variability in the dataset, provides an index of connectivity. The second principal component, which captures 17.7% of the variability, is related to vorticity. 
+The Gulf of Maine Coastal Current is a semi-continuous current that extends from southern Nova Scotia to Cap Cod, MA. The Maine Coastal Current may extend the entire length of the coast of Maine and other times breaks off into two (or more) branches. The branches often diverge at Penobscot Bay, forming the Eastern Maine Coastal Current (EMCC) and Western Maine Coastal Current (WMCC). It is hypothesized that the degree of continuity between the continuity between the EMCC and WMCC has implications for phytoplankton, zooplankton, and larval lobster transport (Pettigrew et al. 1994, McManus et al 2014, Townsend et al 2004, Xue et al 2008). Using a principal components analysis of surface current speed for the eastward (u) direction of an area just offshore of Penobscot Bay, the Maine Coastal Current can be decomposed into the Maine Coastal Current Index that captures the connectivity between the EMCC and WMCC. In this analysis, the first principal component, which capture 52.5% of the variability in the dataset, provides an index of connectivity. The second principal component, which captures 15.3% of the variability, is related to vorticity. 
 
 ## Methods
 
@@ -57,14 +57,14 @@ Data from Finite Volume Community Ocean Model (FVCOM) were used for the eastward
 ```{r read_data, message=FALSE, warning=FALSE}
 mcc_turnoff_subset <- read_csv(here::here("Indicators/mcc_turnoff_subset.csv"))
 
-mcc_all <- mcc_turnoff_subset %>% 
-  na.omit() %>% 
-  mutate(ID = paste(lat,lon, sep = "_")) %>% 
-  filter(Year >= 1980) %>%
-  group_by(Year, ID) %>% 
-  summarise(u = mean(u), .groups = "drop") %>% 
-  pivot_wider(names_from = ID, values_from = c(u)) %>% 
-  column_to_rownames("Year")
+#mcc_all <- mcc_turnoff_subset %>% 
+#  na.omit() %>% 
+#  mutate(ID = paste(lat,lon, sep = "_")) %>% 
+#  filter(Year >= 1980) %>%
+#  group_by(Year, ID) %>% 
+#  summarise(u = mean(u), .groups = "drop") %>% 
+#  pivot_wider(names_from = ID, values_from = c(u)) %>% 
+#  column_to_rownames("Year")
 
 mcc_all <- mcc_turnoff_subset %>% 
   na.omit() %>% 
@@ -102,11 +102,11 @@ mcc_loadings <- left_join(mcc_loadings.pc1, mcc_loadings.pc2, by= "loc") %>%
 
 ### Results
 
-The results show that the first principal component explains 48.7% of the variability and PC2 explains 17.7% of the variability (Figure 2). These first two components had eigenvalues greater than one and were retained for further analysis. The data do have a seasonal signal, with the summer months generally having less connectivity than the rest of the year (figure 3). Figure 4 shows the loadings of the variables. All locations are positively correlated to PC1, where PC1 and the eastward water velocity are the most highly correlated (figure 5, top left panel). 
+The results show that the first principal component explains 52.5% of the variability and PC2 explains 15.3% of the variability (Figure 2). These first two components had eigenvalues greater than one and were retained for further analysis. The data do have a seasonal signal, with the summer months generally having less connectivity (more positive PC1) than the rest of the year (figure 3). Figure 4 shows the loadings of the variables. All locations are positively correlated to PC1, where PC1 and the eastward water velocity are the most highly correlated (figure 5, top left panel). 
 
-Another way to check the relationship between the variables and PC1 and PC2 is to plot the most diverging examples of each PC. Isolating those variables (dates) we find that negative PC1 indicates southwestern water movement, and positive PC1 indicates northeasterly water movement. PC2 is a little more difficult to grasp, but it seems represents the unifority of water direction, where a negative PC2 indicates higher vorticity and higher velocity and a positive PC2 indicates water more uniforem and slower water movement. Use this RShiny app to compare the see how the two PCs change the shape of the currents https://mdzaugis.shinyapps.io/Maine_Coastal_Current/ and figure 6 shows an example of a low vs high PC1. 
+Another way to check the relationship between the variables and PC1 and PC2 is to plot the most diverging examples of each PC. Isolating those variables (dates) we find that positive PC1 indicates southwestern water movement, and negative PC1 indicates northeasterly water movement. PC2 is a little more difficult to grasp, but it seems represents the uniformity of water direction, where a negative PC2 indicates higher vorticity where as a positive PC2 indicates water more uniform water movement. Use this RShiny app to compare the see how the two PCs change the shape of the currents https://mdzaugis.shinyapps.io/Maine_Coastal_Current/ and figure 6 shows an example of a low vs high PC1. 
 
-When using PC1 as the coastal current index, negative values indicate greater connectivity between the EMCC and WMCC and positive values indicate lower connectivity and offshore movement.
+When using PC1 as the coastal current index, positive values indicate greater connectivity between the EMCC and WMCC and negative values indicate lower connectivity and offshore movement.
 
 
 ```{r pressure, echo=FALSE, message=FALSE, warning=FALSE, fig.cap="Figure 2. Scree plot of the Maine Coastal Current PCA"}
@@ -134,8 +134,7 @@ fviz_pca_var(mcc_pca,
 ```{r corrs, echo=FALSE, message=FALSE, warning=FALSE, fig.cap="Figure 5. Correlation between PC1 and eastward water velocity (top left, 'PC1_u'), PC1 and northward water velocity (top right, 'PC1_v'), PC2 and eastward water velocity (bottom left, 'PC2_u'), and PC2 and northward water velocity (bottom right, 'PC2_v')"}
 mcc_corrs <- mcc_turnoff_subset %>% 
   left_join(mcc_pca_pc1_2, by = "Date") %>% 
-  filter(Year > 1980,
-         mon %in% c(6,7,8,9)) %>% 
+  filter(Year > 1980) %>% 
   mutate(dir = ifelse(REdaS::rad2deg(SparkR::atan2(v,u)) < 0, REdaS::rad2deg(SparkR::atan2(v,u)) + 360, REdaS::rad2deg(SparkR::atan2(v,u))), 
                                vel = sqrt(u^2+v^2)) %>% group_by(lat, lon) %>% 
   summarise(PC1_vel = cor(vel, PC1),
@@ -164,7 +163,7 @@ mcc_turnoff_subset %>%
   mutate(yr = year(as.Date(Date)), mon = month(as.Date(Date))) %>% 
   filter(Date %in% c(as.Date("2010-03-01"), as.Date("1986-03-01"), as.Date("2011-03-01"))) %>% 
   mutate(vel = sqrt(u_vert^2+v_vert^2), 
-         PC = if_else(yr == 2010, "negative PC1", if_else(yr ==1986, "positive PC1", "neutral PC1"))) %>% 
+         PC = if_else(yr == 2010, "positive PC1", if_else(yr ==1986, "negative PC1", "neutral PC1"))) %>% 
   ggplot() + geom_sf(data= ne_us, fill = "grey") + 
   geom_segment(aes(x = lon, y = lat, xend=lon+u, yend=lat+v, color = vel), 
                arrow = arrow(angle = 30, length = unit(0.05, "inches"), type = "closed")) + 
@@ -193,32 +192,19 @@ mcc_turnoff_subset %>%
         axis.ticks = element_blank())
 
 ```
-```{r ex_testing, echo=FALSE, message=FALSE, warning=FALSE, fig.width = 5, fig.cap="Figure 6. Example water current pattern of a Negative PC1 (left), neutral PC1 (middle) and positive PC1 (right). Each plot is from the same month (March) and have similar PC2 values"}
-c(as.Date("2008-08-01"), as.Date("2014-08-01"), as.Date("1991-08-01"))
-mcc_turnoff_subset %>% 
-  mutate(yr = year(as.Date(Date)), mon = month(as.Date(Date))) %>% 
-  filter(Date %in% c(as.Date("2010-01-01"), as.Date("1998-01-01"), as.Date("1991-08-01"))) %>% 
-  mutate(vel = sqrt(u_vert^2+v_vert^2), 
-         PC = if_else(yr == 2010, "negative PC2", if_else(yr == 1998, "positive PC2", "neutral PC2"))) %>% 
-  ggplot() + geom_sf(data= ne_us, fill = "grey") + 
-  geom_segment(aes(x = lon, y = lat, xend=lon+u, yend=lat+v, color = vel), 
-               arrow = arrow(angle = 30, length = unit(0.05, "inches"), type = "closed")) + 
-  scale_color_viridis_c() + theme_bw() + 
-  coord_sf(datum = "+proj=longlat +datum=NAD83 +no_defs +ellps=GRS80 +towgs84=0,0,0") + facet_wrap(~PC)+ 
-  theme(panel.background = element_blank(), panel.grid = element_blank(), 
-        axis.title = element_blank(), axis.text = element_blank(),
-        axis.ticks = element_blank())
 
-```
 
-```{r PC1_time_series, echo=FALSE, message=FALSE, warning=FALSE, fig.cap="Figure 7. Time series of PC1 or the Maine Coastal Current Index. Positive values indicate a break in the current and negative values indicate a continuous current."}
+```{r PC1_time_series, echo=FALSE, message=FALSE, warning=FALSE, fig.cap="Figure 7. Monthly time series of PC1 or the Maine Coastal Current Index. Negative values indicate a break in the current and positive values indicate a continuous current."}
 
-write_csv(mcc_pca_pc1_2, "/Users/mdzaugis/Documents/EcosystemIndicators/Indicators/mcc_pca_pc1_2.csv")
+#write_csv(mcc_pca_pc1_2, "/Users/mdzaugis/Documents/EcosystemIndicators/Indicators/mcc_pca_pc1_2.csv")
 
 mcc_pca_pc1 %>%
   mutate(c = ifelse(PC1 > 0, 1, 2)) %>% 
   ggplot() + geom_col(aes(x = as.Date(Date), y = PC1, fill = as.factor(c))) + theme_bw() + theme(legend.position = "none") + labs(x = "Date")
+```
 
+
+```{r PC1_time_series_yearly, echo=FALSE, message=FALSE, warning=FALSE, fig.cap="Figure 8. Yearly time series of PC1 or the Maine Coastal Current Index. Negative values indicate a break in the current and positive values indicate a continuous current."}
 
 mcc_pca_pc1 %>% 
   mutate(yr = lubridate::year(Date)) %>% 
@@ -226,7 +212,10 @@ mcc_pca_pc1 %>%
   summarise(PC1 = mean(PC1, na.rm = TRUE)) %>% 
   mutate(c = ifelse(PC1 > 0, 1, 2)) %>% 
   ggplot() + geom_col(aes(x = yr, y = PC1, fill = as.factor(c))) + theme_bw() + theme(legend.position = "none") + labs(x = "Date")
+```
 
+
+```{r PC2_time_series, echo=FALSE, message=FALSE, warning=FALSE, fig.cap="Figure 9. Yearly time series of PC2 or the Maine Coastal Current Index. Negative PC2 indicates higher vorticity where as a positive PC2 indicates water more uniform water movement."}
 
 mcc_pca_pc2 %>% 
   mutate(yr = lubridate::year(Date)) %>% 
@@ -234,8 +223,10 @@ mcc_pca_pc2 %>%
   summarise(PC2 = mean(PC2, na.rm = TRUE)) %>% 
   mutate(c = ifelse(PC2 > 0, 1, 2)) %>% 
   ggplot() + geom_col(aes(x = yr, y = PC2, fill = as.factor(c))) + theme_bw() + theme(legend.position = "none") + labs(x = "Date")
+```
 
 
+```{r PC1_time_series_seasonal, echo=FALSE, message=FALSE, warning=FALSE, fig.cap="Figure 10. Season-year Time series of PC1 or the Maine Coastal Current Index. Negative values indicate a break in the current and positive values indicate a continuous current."}
 mcc_pca_pc1 %>% 
   mutate(Year = lubridate::year(Date),
          Month = lubridate::month(Date),
