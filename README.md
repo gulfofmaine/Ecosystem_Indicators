@@ -2,9 +2,9 @@
 
 **About:**
 
-This section of the repository contains code detailing how the indicator data was processed. This readme exists to orient users to the code and lays out the order in which the code should be run for reproducible results. 
+This section of the repository contains the individual indicator analysis results, lobster data results, and multivariate results. It includes the code detailing how the indicator data was processed. This readme exists to orient users to the code and lays out the order in which the code should be run for reproducible results. 
 
-## Indicator results
+## Indicator analysis results
 
 * [SST (OISST)](https://dzaugis.github.io/Ecosystem_Indicators/Code/oisst_Analysis.html)
 * [Bottom temperature (FVCOM)](https://dzaugis.github.io/Ecosystem_Indicators/Code/fvcom_bt_Analysis.html)
@@ -21,6 +21,14 @@ This section of the repository contains code detailing how the indicator data wa
 * [NEFSC lobster predator biomass](https://dzaugis.github.io/Ecosystem_Indicators/blob/nefsc_biomass_Analysis.html)
 * [NEFSC lobster predator abundance](https://dzaugis.github.io/Ecosystem_Indicators/Code/nefsc_abundance_Analysis.html)
 * [NEFSC lobster predator size spectra](https://dzaugis.github.io/Ecosystem_Indicators/Code/nefsc_size_spectra_slope_Analysis.html)
+
+## Lobster data analysis results
+
+* [Lobster data analysis](https://dzaugis.github.io/Ecosystem_Indicators/Code/Lobster_Data_Analysis.html)
+
+## Multivariate analysis results
+
+* [Multivariate results](https://dzaugis.github.io/Ecosystem_Indicators/Code/Multivariate_Analysis.html)
 
 ## Data Sources:
 
