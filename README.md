@@ -4,6 +4,24 @@
 
 This section of the repository contains code detailing how the indicator data was processed. This readme exists to orient users to the code and lays out the order in which the code should be run for reproducible results. 
 
+## Indicator results
+
+* [SST (OISST)]
+* [Bottom temperature (FVCOM)]
+* [SST (FVCOM)]
+* [Sea surface salinity]
+* [Bottom salinity]
+* [Maine Coastal Current]
+* [Stratification]
+* [Small zooplankton]
+* [Calanus]
+* [ME/NH lobster predator biomass]
+* [ME/NH lobster predator abundance]
+* [ME/NH lobster predator size spectra]
+* [NEFSC lobster predator biomass]
+* [NEFSC lobster predator abundance]
+* [NEFSC lobster predator size spectra]
+
 ## Data Sources:
 
 Data from the following sources are used in this analysis:
