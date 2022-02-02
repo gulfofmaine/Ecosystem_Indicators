@@ -6,21 +6,21 @@ This section of the repository contains code detailing how the indicator data wa
 
 ## Indicator results
 
-* [SST (OISST)]
-* [Bottom temperature (FVCOM)]
-* [SST (FVCOM)]
-* [Sea surface salinity]
-* [Bottom salinity]
-* [Maine Coastal Current]
-* [Stratification]
-* [Small zooplankton]
-* [Calanus]
-* [ME/NH lobster predator biomass]
-* [ME/NH lobster predator abundance]
-* [ME/NH lobster predator size spectra]
-* [NEFSC lobster predator biomass]
-* [NEFSC lobster predator abundance]
-* [NEFSC lobster predator size spectra]
+* [SST (OISST)](https://htmlpreview.github.io/https://github.com/gulfofmaine/Ecosystem_Indicators/blob/main/Code/oisst_Analysis.html)
+* [Bottom temperature (FVCOM)](https://htmlpreview.github.io/https://github.com/gulfofmaine/Ecosystem_Indicators/blob/main/Code/fvcom_bt_Analysis.html)
+* [SST (FVCOM)](https://htmlpreview.github.io/https://github.com/gulfofmaine/Ecosystem_Indicators/blob/main/Code/fvcom_sst_Analysis.html)
+* [Sea surface salinity](https://htmlpreview.github.io/https://github.com/gulfofmaine/Ecosystem_Indicators/blob/main/Code/fvcom_sss_Analysis.html)
+* [Bottom salinity](https://htmlpreview.github.io/https://github.com/gulfofmaine/Ecosystem_Indicators/blob/main/Code/fvcom_bs_Analysis.html)
+* [Maine Coastal Current](https://htmlpreview.github.io/https://github.com/gulfofmaine/Ecosystem_Indicators/blob/main/Code/mcc_Analysis.html)
+* [Stratification](https://htmlpreview.github.io/https://github.com/gulfofmaine/Ecosystem_Indicators/blob/main/Code/Stratification_Analysis.html)
+* [Small zooplankton](https://htmlpreview.github.io/https://github.com/gulfofmaine/Ecosystem_Indicators/blob/main/Code/cpr_FirstMode_Analysis.html)
+* [Calanus](https://htmlpreview.github.io/https://github.com/gulfofmaine/Ecosystem_Indicators/blob/main/Code/cpr_SecondMode_Analysis.html)
+* [ME/NH lobster predator biomass](https://htmlpreview.github.io/https://github.com/gulfofmaine/Ecosystem_Indicators/blob/main/Code/menh_biomass_Analysis.html)
+* [ME/NH lobster predator abundance](https://htmlpreview.github.io/https://github.com/gulfofmaine/Ecosystem_Indicators/blob/main/Code/menh_abundance_Analysis.html)
+* [ME/NH lobster predator size spectra](https://htmlpreview.github.io/https://github.com/gulfofmaine/Ecosystem_Indicators/blob/main/Code/menh_size_spectra_slope_Analysis.html)
+* [NEFSC lobster predator biomass](https://htmlpreview.github.io/https://github.com/gulfofmaine/Ecosystem_Indicators/blob/main/Code/nefsc_biomass_Analysis.html)
+* [NEFSC lobster predator abundance](https://htmlpreview.github.io/https://github.com/gulfofmaine/Ecosystem_Indicators/blob/main/Code/nefsc_abundance_Analysis.html)
+* [NEFSC lobster predator size spectra](https://htmlpreview.github.io/https://github.com/gulfofmaine/Ecosystem_Indicators/blob/main/Code/nefsc_size_spectra_slope_Analysis.html)
 
 ## Data Sources:
 
