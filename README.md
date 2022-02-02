@@ -2,7 +2,7 @@
 
 **About:**
 
-This section of the repository contains the individual indicator analysis results, lobster data results, and multivariate results. It includes the code detailing how the indicator data was processed. This readme exists to orient users to the code and lays out the order in which the code should be run for reproducible results. 
+This section of the README contains the individual indicator analysis results, lobster data results, and multivariate results. Each link shows the results for the individual indicator which includes trend analyis, and slope and mean breakpoint analysis. 
 
 ## Indicator analysis results
 
@@ -29,6 +29,10 @@ This section of the repository contains the individual indicator analysis result
 ## Multivariate analysis results
 
 * [Multivariate results](https://dzaugis.github.io/Ecosystem_Indicators/Code/Multivariate_Analysis.html)
+
+**Data processing**
+
+This section of the README includes the code detailing how the indicator data was processed. This readme exists to orient users to the code and lays out the order in which the code should be run for reproducible results.
 
 ## Data Sources:
 
