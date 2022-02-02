@@ -6,21 +6,21 @@ This section of the repository contains code detailing how the indicator data wa
 
 ## Indicator results
 
-* [SST (OISST)](https://dzaugis.github.io/Ecosystem_Indicators/blob/main/Code/oisst_Analysis.html)
-* [Bottom temperature (FVCOM)](https://dzaugis.github.io/Ecosystem_Indicators/blob/main/Code/fvcom_bt_Analysis.html)
-* [SST (FVCOM)](https://dzaugis.github.io/Ecosystem_Indicators/blob/main/Code/fvcom_sst_Analysis.html)
-* [Sea surface salinity](https://dzaugis.github.io/Ecosystem_Indicators/blob/main/Code/fvcom_sss_Analysis.html)
-* [Bottom salinity](https://dzaugis.github.io/Ecosystem_Indicators/blob/main/Code/fvcom_bs_Analysis.html)
-* [Maine Coastal Current](https://dzaugis.github.io/Ecosystem_Indicators/blob/main/Code/mcc_Analysis.html)
-* [Stratification](https://dzaugis.github.io/Ecosystem_Indicators/blob/main/Code/Stratification_Analysis.html)
-* [Small zooplankton](https://dzaugis.github.io/Ecosystem_Indicators/blob/main/Code/cpr_FirstMode_Analysis.html)
-* [Calanus](https://dzaugis.github.io/Ecosystem_Indicators/blob/main/Code/cpr_SecondMode_Analysis.html)
-* [ME/NH lobster predator biomass](https://dzaugis.github.io/Ecosystem_Indicators/blob/main/Code/menh_biomass_Analysis.html)
-* [ME/NH lobster predator abundance](https://dzaugis.github.io/Ecosystem_Indicators/blob/main/Code/menh_abundance_Analysis.html)
-* [ME/NH lobster predator size spectra](https://dzaugis.github.io/Ecosystem_Indicators/blob/main/Code/menh_size_spectra_slope_Analysis.html)
-* [NEFSC lobster predator biomass](https://dzaugis.github.io/Ecosystem_Indicators/blob/main/Code/nefsc_biomass_Analysis.html)
-* [NEFSC lobster predator abundance](https://dzaugis.github.io/Ecosystem_Indicators/blob/main/Code/nefsc_abundance_Analysis.html)
-* [NEFSC lobster predator size spectra](https://dzaugis.github.io/Ecosystem_Indicators/blob/main/Code/nefsc_size_spectra_slope_Analysis.html)
+* [SST (OISST)](https://dzaugis.github.io/Ecosystem_Indicators/Code/oisst_Analysis.html)
+* [Bottom temperature (FVCOM)](https://dzaugis.github.io/Ecosystem_Indicators/Code/fvcom_bt_Analysis.html)
+* [SST (FVCOM)](https://dzaugis.github.io/Ecosystem_Indicators/Code/fvcom_sst_Analysis.html)
+* [Sea surface salinity](https://dzaugis.github.io/Ecosystem_Indicators/Code/fvcom_sss_Analysis.html)
+* [Bottom salinity](https://dzaugis.github.io/Ecosystem_Indicators/Code/fvcom_bs_Analysis.html)
+* [Maine Coastal Current](https://dzaugis.github.io/Ecosystem_Indicators/Code/mcc_Analysis.html)
+* [Stratification](https://dzaugis.github.io/Ecosystem_IndicatorsCode/Stratification_Analysis.html)
+* [Small zooplankton](https://dzaugis.github.io/Ecosystem_Indicators/Code/cpr_FirstMode_Analysis.html)
+* [Calanus](https://dzaugis.github.io/Ecosystem_Indicators/Code/cpr_SecondMode_Analysis.html)
+* [ME/NH lobster predator biomass](https://dzaugis.github.io/Ecosystem_Indicators/Code/menh_biomass_Analysis.html)
+* [ME/NH lobster predator abundance](https://dzaugis.github.io/Ecosystem_Indicators/Code/menh_abundance_Analysis.html)
+* [ME/NH lobster predator size spectra](https://dzaugis.github.io/Ecosystem_Indicators/Code/menh_size_spectra_slope_Analysis.html)
+* [NEFSC lobster predator biomass](https://dzaugis.github.io/Ecosystem_Indicators/blob/nefsc_biomass_Analysis.html)
+* [NEFSC lobster predator abundance](https://dzaugis.github.io/Ecosystem_Indicators/Code/nefsc_abundance_Analysis.html)
+* [NEFSC lobster predator size spectra](https://dzaugis.github.io/Ecosystem_Indicators/Code/nefsc_size_spectra_slope_Analysis.html)
 
 ## Data Sources:
 
