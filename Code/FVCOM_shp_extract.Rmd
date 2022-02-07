@@ -35,7 +35,7 @@ The code below extracts the monthly mean temperature and u and v currents from t
 
 ```{r monthly_mean_temp}
 
-nc_files <- list.files(gmRi::shared.path(group = "Mills Lab", folder = "Projects/Lobster/FVCOM_mon_means"), full.names = TRUE)
+nc_files <- list.files(gmRi::shared.path(group = "Res_Data", folder = "FVCOM_mon_means"), full.names = TRUE)
 
 for(i in 1:length(nc_files)){
   if(i < 469){
@@ -144,7 +144,7 @@ write_csv(FVCOM_temp_anoms, here::here("Indicators/FVCOM_stat_area_temps.csv"))
 
 ```{r monthly_mean_salinity}
 
-nc_files <- list.files(gmRi::shared.path(group = "Mills Lab", folder = "Projects/Lobster/FVCOM_mon_means"), full.names = TRUE)
+nc_files <- list.files(gmRi::shared.path(group = "Res_Data", folder = "FVCOM_mon_means"), full.names = TRUE)
 
 for(i in 1:length(nc_files)){
   if(i < 469){
@@ -251,7 +251,7 @@ write_csv(FVCOM_sal_anoms, here::here("Indicators/FVCOM_stat_area_sal.csv"))
 ### Monthly mean current strength and direction
 
 ```{r monthly_mean_currents}
-nc_files <- list.files(gmRi::shared.path(group = "Mills Lab", folder = "Projects/Lobster/FVCOM_mon_means"), full.names = TRUE)
+nc_files <- list.files(gmRi::shared.path(group = "Res_Data", folder = "FVCOM_mon_means"), full.names = TRUE)
 
 x <- ncdf4::nc_open(nc_files[[400]]) # get a mesh with lat and lon values (for some reason the early files have 0 for lat and lon)
 elems <- dplyr::left_join(fvcom::fvcom_elems(x, what = 'lonlat'), 
