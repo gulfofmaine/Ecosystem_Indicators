@@ -15,6 +15,11 @@ library(colorspace)
 library(here)
 ```
 
+
+```{r read}
+Buoy_csv <- read_csv(here::here("Data/Buoy_data.csv"))
+
+```
 ### Stratification calculation
 
 The Brunt-Vaisala frequency was used to calculate the ocean stratification between the surface and 50m depths. When the water is more stratified, the frequency is higher. When the water is less stratified the frequency is lower.

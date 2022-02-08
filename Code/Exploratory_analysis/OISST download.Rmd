@@ -1,0 +1,116 @@
+---
+title: "OISST Download"
+author: "Matt Dzaugis"
+date: "8/14/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+# The three packages we will need
+library(dplyr)
+library(rerddap)
+library(ncdf4)
+library(sf)
+library(lubridate)
+library(tidyverse)
+library(raster)
+library(rgdal)
+```
+
+### Enter in the ERDDAP data path
+
+Gridded OISST data can be found in the NCEI erddap server. Info on the specific dataset can be found using the code below.
+
+```{r getting the data, echo = FALSE}
+# The information for the NOAA OISST data
+info(datasetid = "ncdc_oisst_v2_avhrr_by_time_zlev_lat_lon", url = "https://www.ncei.noaa.gov/erddap/")
+```
+
+### Download and break the time series into chunks
+
+OISST data can be downloaded as netCDF files. The specific spatial and temporal domain can be specified before had so more data isn't transfered than necessary. It is best to break this download into chucks of about 8 years at a time.
+
+```{r getting the average of the scenarios, echo=FALSE}
+# This function expects the user to provide it with two values 
+# that match the time format of the target OISST dataset
+make360 <- function(lon) {
+  ## Details
+  # This is a simple function to translate negative longitudes (measured on -180:180 scale) into 0-360, which is coordinate system used by some environmental datasets.
+  
+  # Args:
+  # lon = Longitude in -180:180 degrees
+  
+  # Returns: 0 to 360 longitude
+  
+  ## Start function
+  
+  ind <- which(lon < 0)
+  lon[ind] <- lon[ind] + 360
+  return(lon)
+  
+  ## End function
+}
+
+OISST_sub <- function(times){
+  oisst_res <- griddap(x = "ncdc_oisst_v2_avhrr_by_time_zlev_lat_lon", 
+                       url = "https://www.ncei.noaa.gov/erddap/", 
+                        time = times, 
+                        depth = c(0, 0),
+                        latitude = c(39.5, 46.5),
+                        longitude = c(288.5, 297.5),
+                        fields = "sst") # can also choose "anom" for preprocessed anomalies with 1971-2000 baseline climatology
+}
+
+
+OISST1 <- OISST_sub(c("1981-09-01T00:00:00Z", "1990-12-31T00:00:00Z"))
+OISST2 <- OISST_sub(c("1991-01-01T00:00:00Z", "1999-12-31T00:00:00Z"))
+OISST3 <- OISST_sub(c("2000-01-01T00:00:00Z", "2008-12-31T00:00:00Z"))
+OISST4 <- OISST_sub(c("2009-01-01T00:00:00Z", "2013-12-03T00:00:00Z"))
+OISST5 <- OISST_sub(c("2014-01-01T00:00:00Z", "2021-12-31T00:00:00Z"))
+```
+
+### Create a long format if necessary
+
+The netCDF files can be processed into a long format using the following code.
+
+```{r putting into an r data file, echo = FALSE}
+
+OISST_prep <- function(nc_file){
+  
+  # Open the NetCDF connection
+  nc <- nc_open(nc_file$summary$filename)
+  
+  # Extract the SST values and add the lon/lat/time dimension names
+  res <- ncvar_get(nc, varid = "sst")
+  dimnames(res) <- list(lon = nc$dim$longitude$vals,
+                        lat = nc$dim$latitude$vals,
+                        t = nc$dim$time$vals)
+  
+  # Convert the data into a 'long' dataframe for use in the 'tidyverse' ecosystem
+  res <- as.data.frame(reshape2::melt(res, value.name = "temp"), row.names = NULL) %>% 
+    mutate(t = as.Date(as.POSIXct(t, origin = "1970-01-01 00:00:00")),
+           temp = round(temp, 2))
+  
+  # Close the NetCDF connection and finish
+  nc_close(nc)
+  return(res)
+}
+
+```
+
+```{r forecast graphs, echo=FALSE}
+# Prep the data
+OISST1_prep <- OISST_prep(OISST1)
+OISST2_prep <- OISST_prep(OISST2)
+OISST3_prep <- OISST_prep(OISST3)
+OISST4_prep <- OISST_prep(OISST4)
+OISST5_prep <- OISST_prep(OISST5)
+
+# Bind them together
+OISST_all <- rbind(OISST1_prep, OISST2_prep, OISST3_prep, OISST4_prep, OISST5_prep)
+
+# Save the data as an .csv file
+write_csv(OISST_all, here::here("/OISST.csv"))
+```
+

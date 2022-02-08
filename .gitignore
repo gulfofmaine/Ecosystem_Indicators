@@ -2,6 +2,7 @@
 .Rhistory
 .RData
 .Ruserdata
+.Rapp.history
 Reports
 Plots
 Data
@@ -10,3 +11,4 @@ Intermediate_sal_data
 Intermediate_temp_data
 Biological_data
 Indicators
+rsconnect
