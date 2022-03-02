@@ -13,7 +13,7 @@ This section of the README contains the individual indicator analysis results, l
 * [SST (FVCOM)](https://dzaugis.github.io/Ecosystem_Indicators/Code/fvcom_sst_Analysis.html)
 * [Sea surface salinity](https://dzaugis.github.io/Ecosystem_Indicators/Code/fvcom_sss_Analysis.html)
 * [Bottom salinity](https://dzaugis.github.io/Ecosystem_Indicators/Code/fvcom_bs_Analysis.html)
-* [Maine Coastal Current](https://dzaugis.github.io/Ecosystem_Indicators/Code/mcc_Analysis.html)
+* [Maine Coastal Current](https://dzaugis.github.io/Ecosystem_Indicators/Code/MCC_Analysis.html)
 * [Stratification](https://dzaugis.github.io/Ecosystem_Indicators/Code/Stratification_Analysis.html)
 * [Small zooplankton](https://dzaugis.github.io/Ecosystem_Indicators/Code/cpr_FirstMode_Analysis.html)
 * [Calanus](https://dzaugis.github.io/Ecosystem_Indicators/Code/cpr_SecondMode_Analysis.html)
