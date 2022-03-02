@@ -14,19 +14,19 @@ allIndicators$stat_area <- factor(allIndicators$stat_area, levels= c("511", "512
 
 indicator <- data.frame("name" = unique(allIndicators$Indicator))
 indicator <- indicator %>% 
-  mutate(long_name = case_when(name == "fvcom_bt"~"FVCOM NECOFS bottom temperature",
-                               name == "fvcom_sst"~"FVCOM NECOFS surface temperature",
-                               name == "oisst"~"OISSTv2.1",
-                               name == "fvcom_bs"~"FVCOM NECOFS bottom salinity",
-                               name == "fvcom_sss"~"FVCOM NECOFS surface salinity",
-                               name == "mcc"~"Maine Coastal Current Index",
-                               name == "stratification"~"Stratification Index",
-                               name == "nefsc_biomass"~"NEFSC lobster predator biomass",
-                               name == "nefsc_abundance"~"NEFSC lobster predator abundance",
-                               name == "menh_abundance"~"ME/NH inshore trawl lobster predator abundance",
-                               name == "menh_biomass"~"ME/NH inshore trawl lobster predator biomass",
-                               name == "nefsc_size_spectra_slope"~"NEFSC size-based predator index",
-                               name == "menh_size_spectra_slope"~"ME/NH size-based predator index",
+  mutate(long_name = case_when(name == "fvcom_bt"~"bottom temperature",
+                               name == "fvcom_sst"~"sea surface temperature_FVCOM",
+                               name == "oisst"~"sea surface temperature_OISST",
+                               name == "fvcom_bs"~"bottom salinity",
+                               name == "fvcom_sss"~"surface salinity",
+                               name == "mcc"~"Maine Coastal Current",
+                               name == "stratification"~"Stratification",
+                               name == "nefsc_biomass"~"NEFSC predator biomass",
+                               name == "nefsc_abundance"~"NEFSC predator abundance",
+                               name == "menh_abundance"~"ME/NH predator abundance",
+                               name == "menh_biomass"~"ME/NH predator biomass",
+                               name == "nefsc_size_spectra_slope"~"NEFSC size spectra slope",
+                               name == "menh_size_spectra_slope"~"ME/NH size spectra slope",
                                name == "cpr_FirstMode"~"Small zooplankton index",
                                name == "cpr_SecondMode"~"Calanus index"))
 
@@ -85,6 +85,7 @@ allIndicators <- allIndicators %>%
   mutate(Period = if_else(Year <= slopeBP, "Period1", "Period2"))
 
 allIndicators$Indicator <- factor(allIndicators$Indicator, levels = indicator$name)
+allIndicators$long_name <- factor(allIndicators$long_name, levels = indicator$long_name)
 
 allIndicators %>% 
   filter(Season == "all",
@@ -95,6 +96,6 @@ allIndicators %>%
   geom_vline(aes(xintercept = meanBP2), color = "red") +
   geom_smooth(aes(Year, Value, group = Period), method = "lm", se = FALSE) + 
   scale_x_continuous(limits = c(1960, 2020)) + 
-  facet_wrap(~Indicator, scales = "free_y", ncol = 3)
+  facet_wrap(~long_name, scales = "free_y", ncol = 3)
 
 

@@ -6,19 +6,21 @@ This section of the README contains the individual indicator analysis results, l
 
 ## Indicator analysis results
 
+#### Make clear of the units with a sentence describing the analysis and units
+
 * [SST (OISST)](https://dzaugis.github.io/Ecosystem_Indicators/Code/oisst_Analysis.html)
 * [Bottom temperature (FVCOM)](https://dzaugis.github.io/Ecosystem_Indicators/Code/fvcom_bt_Analysis.html)
 * [SST (FVCOM)](https://dzaugis.github.io/Ecosystem_Indicators/Code/fvcom_sst_Analysis.html)
 * [Sea surface salinity](https://dzaugis.github.io/Ecosystem_Indicators/Code/fvcom_sss_Analysis.html)
 * [Bottom salinity](https://dzaugis.github.io/Ecosystem_Indicators/Code/fvcom_bs_Analysis.html)
 * [Maine Coastal Current](https://dzaugis.github.io/Ecosystem_Indicators/Code/mcc_Analysis.html)
-* [Stratification](https://dzaugis.github.io/Ecosystem_IndicatorsCode/Stratification_Analysis.html)
+* [Stratification](https://dzaugis.github.io/Ecosystem_Indicators/Code/Stratification_Analysis.html)
 * [Small zooplankton](https://dzaugis.github.io/Ecosystem_Indicators/Code/cpr_FirstMode_Analysis.html)
 * [Calanus](https://dzaugis.github.io/Ecosystem_Indicators/Code/cpr_SecondMode_Analysis.html)
 * [ME/NH lobster predator biomass](https://dzaugis.github.io/Ecosystem_Indicators/Code/menh_biomass_Analysis.html)
 * [ME/NH lobster predator abundance](https://dzaugis.github.io/Ecosystem_Indicators/Code/menh_abundance_Analysis.html)
 * [ME/NH lobster predator size spectra](https://dzaugis.github.io/Ecosystem_Indicators/Code/menh_size_spectra_slope_Analysis.html)
-* [NEFSC lobster predator biomass](https://dzaugis.github.io/Ecosystem_Indicators/blob/nefsc_biomass_Analysis.html)
+* [NEFSC lobster predator biomass](https://dzaugis.github.io/Ecosystem_Indicators/Code/nefsc_biomass_Analysis.html)
 * [NEFSC lobster predator abundance](https://dzaugis.github.io/Ecosystem_Indicators/Code/nefsc_abundance_Analysis.html)
 * [NEFSC lobster predator size spectra](https://dzaugis.github.io/Ecosystem_Indicators/Code/nefsc_size_spectra_slope_Analysis.html)
 
